@@ -4,3 +4,4 @@
 os.bin
 kernel.bin
 boot.bin
+vfs.img
