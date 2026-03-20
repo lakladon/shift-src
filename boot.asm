@@ -9,14 +9,34 @@ mov sp, 0x7c00
 mov [a], dl
 
 mov bx, 0x1000
+mov si, 1
+mov di, 40
+
+r:
+mov ax, si
+xor dx, dx
+mov cx, 36
+div cx
+mov ch, al
+
+mov ax, dx
+xor dx, dx
+mov cx, 18
+div cx
+mov dh, al
+mov cl, dl
+inc cl
+
 mov ah, 0x02
-mov al, 24
-mov ch, 0
-mov cl, 2
-mov dh, 0
+mov al, 1
 mov dl, [a]
 int 0x13
 jc z
+
+add bx, 512
+inc si
+dec di
+jnz r
 
 cli
 lgdt [g]

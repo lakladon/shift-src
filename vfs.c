@@ -4,19 +4,19 @@
 
 typedef struct
 {
-    char path[32];
-    char data[128];
+    char put[32];
+    char tekst[128];
 } VfsFile;
 
-static VfsFile g_files[8];
-static int g_count = 0;
-static unsigned char g_store[4096];
+static VfsFile failiki[8];
+static int skolko_failov = 0;
+static unsigned char sklad[4096];
 
-#define ATA_IO_BASE 0x1F0
-#define VFS_DISK_LBA 0
-#define VFS_DISK_SECTORS 8
+#define ATAIOBASE 0x1F0
+#define VFSDISKLBA 0
+#define VFSDISKSECTORS 8
 
-static int str_len127(const char* s)
+static int strlen127(const char* s)
 {
     int i = 0;
     while (i < 127 && s[i])
@@ -26,7 +26,7 @@ static int str_len127(const char* s)
     return i;
 }
 
-static int str_len31(const char* s)
+static int strlen31(const char* s)
 {
     int i = 0;
     while (i < 31 && s[i])
@@ -36,7 +36,7 @@ static int str_len31(const char* s)
     return i;
 }
 
-static int str_fits31(const char* s)
+static int strfits31(const char* s)
 {
     int i = 0;
     while (i < 32)
@@ -50,7 +50,7 @@ static int str_fits31(const char* s)
     return 0;
 }
 
-static int str_fits127(const char* s)
+static int strfits127(const char* s)
 {
     int i = 0;
     while (i < 128)
@@ -64,7 +64,7 @@ static int str_fits127(const char* s)
     return 0;
 }
 
-static void str_copy127(char* dst, const char* src)
+static void strcopy127(char* dst, const char* src)
 {
     int i = 0;
     while (i < 127 && src[i])
@@ -75,7 +75,7 @@ static void str_copy127(char* dst, const char* src)
     dst[i] = 0;
 }
 
-static void str_copy31(char* dst, const char* src)
+static void strcopy31(char* dst, const char* src)
 {
     int i = 0;
     while (i < 31 && src[i])
@@ -86,7 +86,7 @@ static void str_copy31(char* dst, const char* src)
     dst[i] = 0;
 }
 
-static void mem_zero(unsigned char* p, int n)
+static void memzero(unsigned char* p, int n)
 {
     int i = 0;
     while (i < n)
@@ -96,12 +96,12 @@ static void mem_zero(unsigned char* p, int n)
     }
 }
 
-static int ata_wait_not_bsy()
+static int atawaitnotbsy()
 {
     int t = 0;
     while (t < 100000)
     {
-        unsigned char st = zhmyak_in(ATA_IO_BASE + 7);
+        unsigned char st = zhmyak_in(ATAIOBASE + 7);
         if ((st & 0x80) == 0)
         {
             return 1;
@@ -111,12 +111,12 @@ static int ata_wait_not_bsy()
     return 0;
 }
 
-static int ata_wait_drq()
+static int atawaitdrq()
 {
     int t = 0;
     while (t < 100000)
     {
-        unsigned char st = zhmyak_in(ATA_IO_BASE + 7);
+        unsigned char st = zhmyak_in(ATAIOBASE + 7);
         if (st & 0x01)
         {
             return 0;
@@ -130,7 +130,7 @@ static int ata_wait_drq()
     return 0;
 }
 
-static int ata_read_sectors(unsigned int lba, unsigned char count, unsigned char* out)
+static int atareadsectors(unsigned int lba, unsigned char count, unsigned char* out)
 {
     unsigned int s = 0;
 
@@ -143,26 +143,26 @@ static int ata_read_sectors(unsigned int lba, unsigned char count, unsigned char
     {
         int i = 0;
 
-        if (!ata_wait_not_bsy())
+        if (!atawaitnotbsy())
         {
             return 0;
         }
 
-        zhmyak_out(ATA_IO_BASE + 6, (unsigned char)(0xE0 | ((lba >> 24) & 0x0F)));
-        zhmyak_out(ATA_IO_BASE + 2, 1);
-        zhmyak_out(ATA_IO_BASE + 3, (unsigned char)(lba & 0xFF));
-        zhmyak_out(ATA_IO_BASE + 4, (unsigned char)((lba >> 8) & 0xFF));
-        zhmyak_out(ATA_IO_BASE + 5, (unsigned char)((lba >> 16) & 0xFF));
-        zhmyak_out(ATA_IO_BASE + 7, 0x20);
+        zhmyak_out(ATAIOBASE + 6, (unsigned char)(0xE0 | ((lba >> 24) & 0x0F)));
+        zhmyak_out(ATAIOBASE + 2, 1);
+        zhmyak_out(ATAIOBASE + 3, (unsigned char)(lba & 0xFF));
+        zhmyak_out(ATAIOBASE + 4, (unsigned char)((lba >> 8) & 0xFF));
+        zhmyak_out(ATAIOBASE + 5, (unsigned char)((lba >> 16) & 0xFF));
+        zhmyak_out(ATAIOBASE + 7, 0x20);
 
-        if (!ata_wait_drq())
+        if (!atawaitdrq())
         {
             return 0;
         }
 
         while (i < 256)
         {
-            unsigned short w = zhmyak_in16(ATA_IO_BASE + 0);
+            unsigned short w = zhmyak_in16(ATAIOBASE + 0);
             out[0] = (unsigned char)(w & 0xFF);
             out[1] = (unsigned char)((w >> 8) & 0xFF);
             out = out + 2;
@@ -176,7 +176,7 @@ static int ata_read_sectors(unsigned int lba, unsigned char count, unsigned char
     return 1;
 }
 
-static int ata_write_sectors(unsigned int lba, unsigned char count, const unsigned char* in)
+static int atawritesectors(unsigned int lba, unsigned char count, const unsigned char* in)
 {
     unsigned int s = 0;
 
@@ -189,19 +189,19 @@ static int ata_write_sectors(unsigned int lba, unsigned char count, const unsign
     {
         int i = 0;
 
-        if (!ata_wait_not_bsy())
+        if (!atawaitnotbsy())
         {
             return 0;
         }
 
-        zhmyak_out(ATA_IO_BASE + 6, (unsigned char)(0xE0 | ((lba >> 24) & 0x0F)));
-        zhmyak_out(ATA_IO_BASE + 2, 1);
-        zhmyak_out(ATA_IO_BASE + 3, (unsigned char)(lba & 0xFF));
-        zhmyak_out(ATA_IO_BASE + 4, (unsigned char)((lba >> 8) & 0xFF));
-        zhmyak_out(ATA_IO_BASE + 5, (unsigned char)((lba >> 16) & 0xFF));
-        zhmyak_out(ATA_IO_BASE + 7, 0x30);
+        zhmyak_out(ATAIOBASE + 6, (unsigned char)(0xE0 | ((lba >> 24) & 0x0F)));
+        zhmyak_out(ATAIOBASE + 2, 1);
+        zhmyak_out(ATAIOBASE + 3, (unsigned char)(lba & 0xFF));
+        zhmyak_out(ATAIOBASE + 4, (unsigned char)((lba >> 8) & 0xFF));
+        zhmyak_out(ATAIOBASE + 5, (unsigned char)((lba >> 16) & 0xFF));
+        zhmyak_out(ATAIOBASE + 7, 0x30);
 
-        if (!ata_wait_drq())
+        if (!atawaitdrq())
         {
             return 0;
         }
@@ -209,7 +209,7 @@ static int ata_write_sectors(unsigned int lba, unsigned char count, const unsign
         while (i < 256)
         {
             unsigned short w = (unsigned short)(in[0] | ((unsigned short)in[1] << 8));
-            zhmyak_out16(ATA_IO_BASE + 0, w);
+            zhmyak_out16(ATAIOBASE + 0, w);
             in = in + 2;
             i = i + 1;
         }
@@ -218,61 +218,52 @@ static int ata_write_sectors(unsigned int lba, unsigned char count, const unsign
         s = s + 1;
     }
 
-    if (!ata_wait_not_bsy())
+    if (!atawaitnotbsy())
     {
         return 0;
     }
 
-    zhmyak_out(ATA_IO_BASE + 7, 0xE7);
-    return ata_wait_not_bsy();
+    zhmyak_out(ATAIOBASE + 7, 0xE7);
+    return atawaitnotbsy();
 }
 
-static void vfs_set_defaults()
+static void vfssetdefaults()
 {
-    g_count = 3;
-
-    str_copy31(g_files[0].path, "/hello.txt");
-    str_copy127(g_files[0].data, "Hello from Shift VFS");
-
-    str_copy31(g_files[1].path, "/about.txt");
-    str_copy127(g_files[1].data, "Shift OS in-memory virtual filesystem");
-
-    str_copy31(g_files[2].path, "/notes.txt");
-    str_copy127(g_files[2].data, "Use: ls, cat <path>, write <path> <text>");
+    skolko_failov = 0;
 }
 
-static int vfs_load_from_disk()
+static int vfsloadfromdisk()
 {
     int i;
     int pos;
 
-    if (!ata_read_sectors(VFS_DISK_LBA, VFS_DISK_SECTORS, g_store))
+    if (!atareadsectors(VFSDISKLBA, VFSDISKSECTORS, sklad))
     {
         return 0;
     }
 
-    if (!(g_store[0] == 'S' && g_store[1] == 'V' && g_store[2] == 'F' && g_store[3] == '1'))
+    if (!(sklad[0] == 'S' && sklad[1] == 'V' && sklad[2] == 'F' && sklad[3] == '1'))
     {
         return 0;
     }
 
-    if (g_store[4] > 8)
+    if (sklad[4] > 8)
     {
         return 0;
     }
 
-    g_count = g_store[4];
+    skolko_failov = sklad[4];
     pos = 5;
 
     i = 0;
-    while (i < g_count)
+    while (i < skolko_failov)
     {
-        str_copy31(g_files[i].path, (const char*)(g_store + pos));
+        strcopy31(failiki[i].put, (const char*)(sklad + pos));
         pos = pos + 32;
-        str_copy127(g_files[i].data, (const char*)(g_store + pos));
+        strcopy127(failiki[i].tekst, (const char*)(sklad + pos));
         pos = pos + 128;
 
-        if (!str_fits31(g_files[i].path) || !str_fits127(g_files[i].data))
+        if (!strfits31(failiki[i].put) || !strfits127(failiki[i].tekst))
         {
             return 0;
         }
@@ -283,36 +274,36 @@ static int vfs_load_from_disk()
     return 1;
 }
 
-static void vfs_save_to_disk()
+static void vfssavetodisk()
 {
     int i = 0;
     int pos = 5;
 
-    mem_zero(g_store, 4096);
-    g_store[0] = 'S';
-    g_store[1] = 'V';
-    g_store[2] = 'F';
-    g_store[3] = '1';
-    g_store[4] = (unsigned char)g_count;
+    memzero(sklad, 4096);
+    sklad[0] = 'S';
+    sklad[1] = 'V';
+    sklad[2] = 'F';
+    sklad[3] = '1';
+    sklad[4] = (unsigned char)skolko_failov;
 
-    while (i < g_count)
+    while (i < skolko_failov)
     {
-        str_copy31((char*)(g_store + pos), g_files[i].path);
+        strcopy31((char*)(sklad + pos), failiki[i].put);
         pos = pos + 32;
-        str_copy127((char*)(g_store + pos), g_files[i].data);
+        strcopy127((char*)(sklad + pos), failiki[i].tekst);
         pos = pos + 128;
         i = i + 1;
     }
 
-    ata_write_sectors(VFS_DISK_LBA, VFS_DISK_SECTORS, g_store);
+    atawritesectors(VFSDISKLBA, VFSDISKSECTORS, sklad);
 }
 
-static int find_index(const char* path)
+static int findindex(const char* path)
 {
     int i = 0;
-    while (i < g_count)
+    while (i < skolko_failov)
     {
-        if (stroki_odinakovie(g_files[i].path, path))
+        if (stroki_odinakovie(failiki[i].put, path))
         {
             return i;
         }
@@ -323,40 +314,40 @@ static int find_index(const char* path)
 
 void vfs_init()
 {
-    if (!vfs_load_from_disk())
+    if (!vfsloadfromdisk())
     {
-        vfs_set_defaults();
-        vfs_save_to_disk();
+        vfssetdefaults();
+        vfssavetodisk();
     }
 }
 
 int vfs_count()
 {
-    return g_count;
+    return skolko_failov;
 }
 
 const char* vfs_path_at(int index)
 {
-    if (index < 0 || index >= g_count)
+    if (index < 0 || index >= skolko_failov)
     {
         return 0;
     }
-    return g_files[index].path;
+    return failiki[index].put;
 }
 
-int vfs_read(const char* path, char* out, int max_len)
+int vfs_read(const char* path, char* out, int maxlen)
 {
-    int idx = find_index(path);
+    int idx = findindex(path);
     int i = 0;
 
-    if (idx < 0 || max_len <= 0)
+    if (idx < 0 || maxlen <= 0)
     {
         return 0;
     }
 
-    while (i < (max_len - 1) && g_files[idx].data[i])
+    while (i < (maxlen - 1) && failiki[idx].tekst[i])
     {
-        out[i] = g_files[idx].data[i];
+        out[i] = failiki[idx].tekst[i];
         i = i + 1;
     }
     out[i] = 0;
@@ -365,26 +356,26 @@ int vfs_read(const char* path, char* out, int max_len)
 
 int vfs_write(const char* path, const char* text)
 {
-    int idx = find_index(path);
+    int idx = findindex(path);
 
-    if (!str_fits31(path) || !str_fits127(text) || str_len31(path) == 0)
+    if (!strfits31(path) || !strfits127(text) || strlen31(path) == 0)
     {
         return 0;
     }
 
     if (idx < 0)
     {
-        if (g_count >= 8)
+        if (skolko_failov >= 8)
         {
             return 0;
         }
 
-        idx = g_count;
-        g_count = g_count + 1;
-        str_copy31(g_files[idx].path, path);
+        idx = skolko_failov;
+        skolko_failov = skolko_failov + 1;
+        strcopy31(failiki[idx].put, path);
     }
 
-    str_copy127(g_files[idx].data, text);
-    vfs_save_to_disk();
+    strcopy127(failiki[idx].tekst, text);
+    vfssavetodisk();
     return 1;
 }
