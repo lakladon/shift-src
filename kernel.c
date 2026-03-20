@@ -60,8 +60,21 @@ static void vga_puts(const char* s, unsigned char color, int row, int col)
     }
 }
 
+static void vga_clear(unsigned char color)
+{
+    volatile unsigned short* vga = (volatile unsigned short*)0xB8000;
+    int i = 0;
+
+    while (i < 80 * 25)
+    {
+        vga[i] = ((unsigned short)color << 8) | ' ';
+        i = i + 1;
+    }
+}
+
 void kmain()
 {
+    vga_clear(0x0F);
     vga_puts("Shift OS (VGA)", 0x0F, 0, 0);
 
     serial_init();
