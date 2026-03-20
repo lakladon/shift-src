@@ -1,61 +1,61 @@
-void kmain();
+void mega_tusa();
 
 void _start()
 {
-    kmain();
+    mega_tusa();
     while (1)
     {
     }
 }
 
-static inline void outb(unsigned short port, unsigned char value)
+static inline void zhmyak_out(unsigned short port, unsigned char value)
 {
     __asm__ volatile ("outb %0, %1" : : "a"(value), "Nd"(port));
 }
 
-static inline unsigned char inb(unsigned short port)
+static inline unsigned char zhmyak_in(unsigned short port)
 {
     unsigned char ret;
     __asm__ volatile ("inb %1, %0" : "=a"(ret) : "Nd"(port));
     return ret;
 }
 
-static int serial_ready()
+static int serialka_go()
 {
-    return inb(0x3F8 + 5) & 0x20;
+    return zhmyak_in(0x3F8 + 5) & 0x20;
 }
 
-static void serial_init()
+static void serialka_on()
 {
-    outb(0x3F8 + 1, 0x00);
-    outb(0x3F8 + 3, 0x80);
-    outb(0x3F8 + 0, 0x03);
-    outb(0x3F8 + 1, 0x00);
-    outb(0x3F8 + 3, 0x03);
-    outb(0x3F8 + 2, 0xC7);
-    outb(0x3F8 + 4, 0x0B);
+    zhmyak_out(0x3F8 + 1, 0x00);
+    zhmyak_out(0x3F8 + 3, 0x80);
+    zhmyak_out(0x3F8 + 0, 0x03);
+    zhmyak_out(0x3F8 + 1, 0x00);
+    zhmyak_out(0x3F8 + 3, 0x03);
+    zhmyak_out(0x3F8 + 2, 0xC7);
+    zhmyak_out(0x3F8 + 4, 0x0B);
 }
 
-static void serial_write(const char* s)
+static void say_to_serialka(const char* s)
 {
     int i = 0;
     while (s[i]) {
-        while (!serial_ready()) {
+        while (!serialka_go()) {
         }
-        outb(0x3F8, (unsigned char)s[i]);
+        zhmyak_out(0x3F8, (unsigned char)s[i]);
         i = i + 1;
     }
 }
 
-static void serial_write_char(char c)
+static void say_char_to_serialka(char c)
 {
-    while (!serial_ready())
+    while (!serialka_go())
     {
     }
-    outb(0x3F8, (unsigned char)c);
+    zhmyak_out(0x3F8, (unsigned char)c);
 }
 
-static void vga_puts(const char* s, unsigned char color, int row, int col)
+static void pishi_na_ekran(const char* s, unsigned char color, int row, int col)
 {
     volatile unsigned short* vga = (volatile unsigned short*)0xB8000;
     int i = 0;
@@ -68,13 +68,13 @@ static void vga_puts(const char* s, unsigned char color, int row, int col)
     }
 }
 
-static void vga_putc_at(char c, unsigned char color, int row, int col)
+static void pishi_bukvu(char c, unsigned char color, int row, int col)
 {
     volatile unsigned short* vga = (volatile unsigned short*)0xB8000;
     vga[row * 80 + col] = ((unsigned short)color << 8) | (unsigned char)c;
 }
 
-static void vga_clear(unsigned char color)
+static void ochisti_ekranchik(unsigned char color)
 {
     volatile unsigned short* vga = (volatile unsigned short*)0xB8000;
     int i = 0;
@@ -86,17 +86,17 @@ static void vga_clear(unsigned char color)
     }
 }
 
-static unsigned char kbd_has_data()
+static unsigned char klava_est()
 {
-    return inb(0x64) & 1;
+    return zhmyak_in(0x64) & 1;
 }
 
-static unsigned char kbd_read_scancode()
+static unsigned char klava_chitai()
 {
-    return inb(0x60);
+    return zhmyak_in(0x60);
 }
 
-static char scancode_to_ascii(unsigned char sc)
+static char skan_v_bukvu(unsigned char sc)
 {
     static const char map[128] = {
         0,
@@ -124,7 +124,56 @@ static char scancode_to_ascii(unsigned char sc)
     return 0;
 }
 
-void kmain()
+static int stroki_odinakovie(const char* a, const char* b)
+{
+    int i = 0;
+    while (a[i] && b[i])
+    {
+        if (a[i] != b[i])
+        {
+            return 0;
+        }
+        i = i + 1;
+    }
+    return a[i] == b[i];
+}
+
+static int nachinaetsya_s(const char* s, const char* prefix)
+{
+    int i = 0;
+    while (prefix[i])
+    {
+        if (s[i] != prefix[i])
+        {
+            return 0;
+        }
+        i = i + 1;
+    }
+    return 1;
+}
+
+static void shelly_print_line(const char* s, unsigned char color, int* row)
+{
+    if (*row >= 25)
+    {
+        *row = 2;
+    }
+    pishi_na_ekran(s, color, *row, 0);
+    say_to_serialka(s);
+    say_to_serialka("\r\n");
+    *row = *row + 1;
+}
+
+static void shelly_reset_screen(unsigned char color, int* row)
+{
+    ochisti_ekranchik(color);
+    pishi_na_ekran("Shift OS (VGA)", color, 0, 0);
+    pishi_na_ekran("Mini shell: help, clear, about, echo/sayser", color, 1, 0);
+    say_to_serialka("\r\n[screen cleared]\r\n");
+    *row = 2;
+}
+
+void mega_tusa()
 {
     const unsigned char color = 0x0F;
     int row = 2;
@@ -132,27 +181,27 @@ void kmain()
     char word[64];
     int len = 0;
 
-    vga_clear(0x0F);
-    vga_puts("Shift OS (VGA)", color, 0, 0);
-    vga_puts("Type words and press Enter:", color, 1, 0);
-    vga_puts("> ", color, row, col);
+    ochisti_ekranchik(color);
+    pishi_na_ekran("Shift OS (VGA)", color, 0, 0);
+    pishi_na_ekran("Mini shell: help, clear, about, echo/sayser", color, 1, 0);
+    pishi_na_ekran("> ", color, row, col);
     col = 2;
 
-    serial_init();
-    serial_write("Shift OS\r\n");
-    serial_write("Type words and press Enter:\r\n> ");
+    serialka_on();
+    say_to_serialka("Shift OS\r\n");
+    say_to_serialka("Mini shell: help, clear, about, echo <text>, sayser <text>\r\n> ");
 
     while (1)
     {
         unsigned char sc;
         char c;
 
-        if (!kbd_has_data())
+        if (!klava_est())
         {
             continue;
         }
 
-        sc = kbd_read_scancode();
+        sc = klava_chitai();
 
         if (sc & 0x80)
         {
@@ -165,8 +214,8 @@ void kmain()
             {
                 len = len - 1;
                 col = col - 1;
-                vga_putc_at(' ', color, row, col);
-                serial_write("\b \b");
+                pishi_bukvu(' ', color, row, col);
+                say_to_serialka("\b \b");
             }
             continue;
         }
@@ -174,37 +223,56 @@ void kmain()
         if (sc == 0x1C)
         {
             word[len] = 0;
-            serial_write("\r\n");
+            say_to_serialka("\r\n");
 
             row = row + 1;
-            if (row >= 25)
+            if (stroki_odinakovie(word, "help"))
             {
-                vga_clear(color);
-                vga_puts("Shift OS (VGA)", color, 0, 0);
-                vga_puts("Type words and press Enter:", color, 1, 0);
-                row = 2;
+                shelly_print_line("Commands:", color, &row);
+                shelly_print_line("  help", color, &row);
+                shelly_print_line("  clear", color, &row);
+                shelly_print_line("  about", color, &row);
+                shelly_print_line("  echo <text>", color, &row);
+                shelly_print_line("  sayser <text>", color, &row);
+            }
+            else if (stroki_odinakovie(word, "clear"))
+            {
+                shelly_reset_screen(color, &row);
+            }
+            else if (stroki_odinakovie(word, "about"))
+            {
+                shelly_print_line("Shift OS mini shell (32-bit protected mode)", color, &row);
+            }
+            else if (nachinaetsya_s(word, "echo "))
+            {
+                shelly_print_line(word + 5, color, &row);
+            }
+            else if (nachinaetsya_s(word, "sayser "))
+            {
+                say_to_serialka(word + 7);
+                say_to_serialka("\r\n");
+            }
+            else if (len == 0)
+            {
+            }
+            else
+            {
+                shelly_print_line("Unknown command. Type: help", color, &row);
             }
 
-            vga_puts("You typed: ", color, row, 0);
-            vga_puts(word, color, row, 11);
-
-            row = row + 1;
             if (row >= 25)
             {
-                vga_clear(color);
-                vga_puts("Shift OS (VGA)", color, 0, 0);
-                vga_puts("Type words and press Enter:", color, 1, 0);
-                row = 2;
+                shelly_reset_screen(color, &row);
             }
 
-            vga_puts("> ", color, row, 0);
-            serial_write("> ");
+            pishi_na_ekran("> ", color, row, 0);
+            say_to_serialka("> ");
             col = 2;
             len = 0;
             continue;
         }
 
-        c = scancode_to_ascii(sc);
+        c = skan_v_bukvu(sc);
         if (!c)
         {
             continue;
@@ -219,8 +287,8 @@ void kmain()
         {
             word[len] = c;
             len = len + 1;
-            vga_putc_at(c, color, row, col);
-            serial_write_char(c);
+            pishi_bukvu(c, color, row, col);
+            say_char_to_serialka(c);
             col = col + 1;
         }
     }
