@@ -87,6 +87,47 @@ static void append_2d(char* buf, int* pos, unsigned char v)
     append_char(buf, pos, (char)('0' + (v % 10)));
 }
 
+static int str_len64(const char* s)
+{
+    int i = 0;
+    while (i < 63 && s[i])
+    {
+        i = i + 1;
+    }
+    return i;
+}
+
+static void str_copy64(char* dst, const char* src)
+{
+    int i = 0;
+    while (i < 63 && src[i])
+    {
+        dst[i] = src[i];
+        i = i + 1;
+    }
+    dst[i] = 0;
+}
+
+static void redraw_input_line(unsigned char color, int row, char* word, int* len, int* col)
+{
+    int i = 2;
+
+    while (i < 80)
+    {
+        pishi_bukvu(' ', color, row, i);
+        i = i + 1;
+    }
+
+    i = 0;
+    while (i < *len && (2 + i) < 80)
+    {
+        pishi_bukvu(word[i], color, row, 2 + i);
+        i = i + 1;
+    }
+
+    *col = 2 + *len;
+}
+
 void mega_tusa()
 {
     const unsigned char color = 0x0F;
@@ -94,6 +135,10 @@ void mega_tusa()
     int col = 0;
     char word[64];
     int len = 0;
+    char history[10][64];
+    int hist_count = 0;
+    int hist_pos = -1;
+    int e0_prefix = 0;
 
     ubi_mig_stroku();
     ochisti_ekranchik(color);
@@ -123,6 +168,58 @@ void mega_tusa()
 
         sc = klava_chitai();
 
+        if (sc == 0xE0)
+        {
+            e0_prefix = 1;
+            continue;
+        }
+
+        if (e0_prefix)
+        {
+            e0_prefix = 0;
+
+            if (sc == 0x48)
+            {
+                if (hist_count > 0)
+                {
+                    if (hist_pos == -1)
+                    {
+                        hist_pos = hist_count - 1;
+                    }
+                    else if (hist_pos > 0)
+                    {
+                        hist_pos = hist_pos - 1;
+                    }
+
+                    str_copy64(word, history[hist_pos]);
+                    len = str_len64(word);
+                    redraw_input_line(color, row, word, &len, &col);
+                }
+            }
+            else if (sc == 0x50)
+            {
+                if (hist_count > 0 && hist_pos != -1)
+                {
+                    if (hist_pos < hist_count - 1)
+                    {
+                        hist_pos = hist_pos + 1;
+                        str_copy64(word, history[hist_pos]);
+                        len = str_len64(word);
+                    }
+                    else
+                    {
+                        hist_pos = -1;
+                        len = 0;
+                        word[0] = 0;
+                    }
+
+                    redraw_input_line(color, row, word, &len, &col);
+                }
+            }
+
+            continue;
+        }
+
         if (sc & 0x80)
         {
             continue;
@@ -133,6 +230,7 @@ void mega_tusa()
             if (len > 0 && col > 2)
             {
                 len = len - 1;
+                hist_pos = -1;
                 col = col - 1;
                 pishi_bukvu(' ', color, row, col);
                 say_to_serialka("\b \b");
@@ -143,6 +241,27 @@ void mega_tusa()
         if (sc == 0x1C)
         {
             word[len] = 0;
+
+            if (len > 0)
+            {
+                if (hist_count < 10)
+                {
+                    str_copy64(history[hist_count], word);
+                    hist_count = hist_count + 1;
+                }
+                else
+                {
+                    int hi = 1;
+                    while (hi < 10)
+                    {
+                        str_copy64(history[hi - 1], history[hi]);
+                        hi = hi + 1;
+                    }
+                    str_copy64(history[9], word);
+                }
+            }
+
+            hist_pos = -1;
             say_to_serialka("\r\n");
 
             row = row + 1;
@@ -233,6 +352,7 @@ void mega_tusa()
 
         if (len < 63 && col < 80)
         {
+            hist_pos = -1;
             word[len] = c;
             len = len + 1;
             pishi_bukvu(c, color, row, col);
