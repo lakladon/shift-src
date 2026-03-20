@@ -5,6 +5,7 @@
 #include "klava.h"
 #include "stroki.h"
 #include "timerka.h"
+#include "vfs.h"
 
 void mega_tusa();
 
@@ -32,7 +33,7 @@ static void shelly_reset_screen(unsigned char color, int* row)
 {
     ochisti_ekranchik(color);
     pishi_na_ekran("Shift OS (VGA)", color, 0, 0);
-    pishi_na_ekran("Mini shell: help, clear, about, echo/sayser, time/uptime", color, 1, 0);
+    pishi_na_ekran("Mini shell: help, clear, about, echo/sayser, time, uptime, ls/cat/write", color, 1, 0);
     say_to_serialka("\r\n[screen cleared]\r\n");
     *row = 2;
 }
@@ -87,6 +88,69 @@ static void append_2d(char* buf, int* pos, unsigned char v)
     append_char(buf, pos, (char)('0' + (v % 10)));
 }
 
+static int first_space_pos(const char* s)
+{
+    int i = 0;
+    while (s[i])
+    {
+        if (s[i] == ' ')
+        {
+            return i;
+        }
+        i = i + 1;
+    }
+    return -1;
+}
+
+static int has_disk_prefix(const char* p)
+{
+    return p[0] && p[1] == ':' && p[2] == '/';
+}
+
+static int path_belongs_to_disk(const char* p, char disk)
+{
+    if (has_disk_prefix(p))
+    {
+        return p[0] == disk;
+    }
+
+    return disk == 'A';
+}
+
+static void normalize_path(char* out, const char* in, char disk)
+{
+    int i = 0;
+
+    if (has_disk_prefix(in))
+    {
+        while (i < 31 && in[i])
+        {
+            out[i] = in[i];
+            i = i + 1;
+        }
+        out[i] = 0;
+        return;
+    }
+
+    out[0] = disk;
+    out[1] = ':';
+    out[2] = '/';
+    i = 3;
+
+    if (in[0] == '/')
+    {
+        in = in + 1;
+    }
+
+    while (i < 31 && *in)
+    {
+        out[i] = *in;
+        in = in + 1;
+        i = i + 1;
+    }
+    out[i] = 0;
+}
+
 static int str_len64(const char* s)
 {
     int i = 0;
@@ -139,18 +203,20 @@ void mega_tusa()
     int hist_count = 0;
     int hist_pos = -1;
     int e0_prefix = 0;
+    char current_disk = 'A';
 
     ubi_mig_stroku();
     ochisti_ekranchik(color);
     pishi_na_ekran("Shift OS (VGA)", color, 0, 0);
-    pishi_na_ekran("Mini shell: help, clear, about, echo/sayser, time/uptime", color, 1, 0);
+    pishi_na_ekran("Mini shell: help, drives, disk A, ls/cat/write", color, 1, 0);
     pishi_na_ekran("> ", color, row, col);
     col = 2;
 
     serialka_on();
     timerka_on();
+    vfs_init();
     say_to_serialka("Shift OS\r\n");
-    say_to_serialka("Mini shell: help, clear, about, echo <text>, sayser <text>, time, uptime\r\n> ");
+    say_to_serialka("Mini shell: help, clear, about, echo, sayser, time, uptime, drives, disk <A>, ls, cat, write\r\n> ");
 
     while (1)
     {
@@ -275,6 +341,11 @@ void mega_tusa()
                 shelly_print_line("  sayser <text>", color, &row);
                 shelly_print_line("  time", color, &row);
                 shelly_print_line("  uptime", color, &row);
+                shelly_print_line("  drives", color, &row);
+                shelly_print_line("  disk <A>", color, &row);
+                shelly_print_line("  ls", color, &row);
+                shelly_print_line("  cat <path>", color, &row);
+                shelly_print_line("  write <path> <text>", color, &row);
             }
             else if (stroki_odinakovie(word, "clear"))
             {
@@ -292,6 +363,28 @@ void mega_tusa()
             {
                 say_to_serialka(word + 7);
                 say_to_serialka("\r\n");
+            }
+            else if (stroki_odinakovie(word, "drives"))
+            {
+                shelly_print_line("Drives: A", color, &row);
+            }
+            else if (nachinaetsya_s(word, "disk "))
+            {
+                char d = word[5];
+                if ((d >= 'a') && (d <= 'z'))
+                {
+                    d = (char)(d - ('a' - 'A'));
+                }
+
+                if (word[5] && !word[6] && d == 'A')
+                {
+                    current_disk = 'A';
+                    shelly_print_line("disk: current drive = A", color, &row);
+                }
+                else
+                {
+                    shelly_print_line("disk: only A is available", color, &row);
+                }
             }
             else if (stroki_odinakovie(word, "uptime"))
             {
@@ -318,6 +411,78 @@ void mega_tusa()
                 append_2d(out, &out_pos, ss);
                 out[out_pos] = 0;
                 shelly_print_line(out, color, &row);
+            }
+            else if (stroki_odinakovie(word, "ls"))
+            {
+                int i = 0;
+                int shown = 0;
+                while (i < vfs_count())
+                {
+                    const char* p = vfs_path_at(i);
+                    if (p && path_belongs_to_disk(p, current_disk))
+                    {
+                        shelly_print_line(p, color, &row);
+                        shown = 1;
+                    }
+                    i = i + 1;
+                }
+
+                if (!shown)
+                {
+                    shelly_print_line("(empty)", color, &row);
+                }
+            }
+            else if (nachinaetsya_s(word, "cat "))
+            {
+                char path[32];
+                normalize_path(path, word + 4, current_disk);
+
+                if (!vfs_read(path, out, 64) && !vfs_read(word + 4, out, 64))
+                {
+                    shelly_print_line("cat: file not found", color, &row);
+                }
+                else
+                {
+                    shelly_print_line(out, color, &row);
+                }
+            }
+            else if (nachinaetsya_s(word, "write "))
+            {
+                int split = first_space_pos(word + 6);
+
+                if (split < 0)
+                {
+                    shelly_print_line("write: usage write <path> <text>", color, &row);
+                }
+                else
+                {
+                    char path[32];
+                    int i = 0;
+                    char* args = word + 6;
+                    char* text;
+
+                    while (i < split && i < 31)
+                    {
+                        path[i] = args[i];
+                        i = i + 1;
+                    }
+                    path[i] = 0;
+
+                    {
+                        char full_path[32];
+                        normalize_path(full_path, path, current_disk);
+
+                        text = args + split + 1;
+                        if (!vfs_write(full_path, text))
+                        {
+                            shelly_print_line("write: failed", color, &row);
+                        }
+                        else
+                        {
+                            shelly_print_line("write: ok", color, &row);
+                        }
+                    }
+                }
             }
             else if (len == 0)
             {
