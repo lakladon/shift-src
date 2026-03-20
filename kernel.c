@@ -5,6 +5,7 @@
 #include "klava.h"
 #include "stroki.h"
 #include "timerka.h"
+#include "vfs.h"
 
 void mega_tusa();
 
@@ -32,7 +33,7 @@ static void shelly_reset_screen(unsigned char color, int* row)
 {
     ochisti_ekranchik(color);
     pishi_na_ekran("Shift OS (VGA)", color, 0, 0);
-    pishi_na_ekran("Mini shell: help, clear, about, echo/sayser, time/uptime", color, 1, 0);
+    pishi_na_ekran("Mini shell: help, clear, about, echo/sayser, time, uptime, ls/cat/write", color, 1, 0);
     say_to_serialka("\r\n[screen cleared]\r\n");
     *row = 2;
 }
@@ -85,6 +86,20 @@ static void append_2d(char* buf, int* pos, unsigned char v)
 {
     append_char(buf, pos, (char)('0' + ((v / 10) % 10)));
     append_char(buf, pos, (char)('0' + (v % 10)));
+}
+
+static int first_space_pos(const char* s)
+{
+    int i = 0;
+    while (s[i])
+    {
+        if (s[i] == ' ')
+        {
+            return i;
+        }
+        i = i + 1;
+    }
+    return -1;
 }
 
 static int str_len64(const char* s)
@@ -143,14 +158,15 @@ void mega_tusa()
     ubi_mig_stroku();
     ochisti_ekranchik(color);
     pishi_na_ekran("Shift OS (VGA)", color, 0, 0);
-    pishi_na_ekran("Mini shell: help, clear, about, echo/sayser, time/uptime", color, 1, 0);
+    pishi_na_ekran("Mini shell: help, clear, about, echo/sayser, time, uptime, ls/cat/write", color, 1, 0);
     pishi_na_ekran("> ", color, row, col);
     col = 2;
 
     serialka_on();
     timerka_on();
+    vfs_init();
     say_to_serialka("Shift OS\r\n");
-    say_to_serialka("Mini shell: help, clear, about, echo <text>, sayser <text>, time, uptime\r\n> ");
+    say_to_serialka("Mini shell: help, clear, about, echo <text>, sayser <text>, time, uptime, ls, cat <path>, write <path> <text>\r\n> ");
 
     while (1)
     {
@@ -275,6 +291,9 @@ void mega_tusa()
                 shelly_print_line("  sayser <text>", color, &row);
                 shelly_print_line("  time", color, &row);
                 shelly_print_line("  uptime", color, &row);
+                shelly_print_line("  ls", color, &row);
+                shelly_print_line("  cat <path>", color, &row);
+                shelly_print_line("  write <path> <text>", color, &row);
             }
             else if (stroki_odinakovie(word, "clear"))
             {
@@ -318,6 +337,63 @@ void mega_tusa()
                 append_2d(out, &out_pos, ss);
                 out[out_pos] = 0;
                 shelly_print_line(out, color, &row);
+            }
+            else if (stroki_odinakovie(word, "ls"))
+            {
+                int i = 0;
+                while (i < vfs_count())
+                {
+                    const char* p = vfs_path_at(i);
+                    if (p)
+                    {
+                        shelly_print_line(p, color, &row);
+                    }
+                    i = i + 1;
+                }
+            }
+            else if (nachinaetsya_s(word, "cat "))
+            {
+                if (!vfs_read(word + 4, out, 64))
+                {
+                    shelly_print_line("cat: file not found", color, &row);
+                }
+                else
+                {
+                    shelly_print_line(out, color, &row);
+                }
+            }
+            else if (nachinaetsya_s(word, "write "))
+            {
+                int split = first_space_pos(word + 6);
+
+                if (split < 0)
+                {
+                    shelly_print_line("write: usage write <path> <text>", color, &row);
+                }
+                else
+                {
+                    char path[32];
+                    int i = 0;
+                    char* args = word + 6;
+                    char* text;
+
+                    while (i < split && i < 31)
+                    {
+                        path[i] = args[i];
+                        i = i + 1;
+                    }
+                    path[i] = 0;
+
+                    text = args + split + 1;
+                    if (!vfs_write(path, text))
+                    {
+                        shelly_print_line("write: failed", color, &row);
+                    }
+                    else
+                    {
+                        shelly_print_line("write: ok", color, &row);
+                    }
+                }
             }
             else if (len == 0)
             {
