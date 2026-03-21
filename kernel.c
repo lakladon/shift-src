@@ -33,7 +33,7 @@ static void shelly_reset_screen(unsigned char color, int* row)
 {
     ochisti_ekranchik(color);
     pishi_na_ekran("Shift OS (VGA)", color, 0, 0);
-    pishi_na_ekran("Mini shell: help, clear, about, echo/sayser, time, uptime, ls/cat/write", color, 1, 0);
+    pishi_na_ekran("Mini shell: help, drives, disk A, ls/cat/write/stat", color, 1, 0);
     say_to_serialka("\r\n[screen cleared]\r\n");
     *row = 2;
 }
@@ -216,7 +216,7 @@ void mega_tusa()
     timerka_on();
     vfs_init();
     say_to_serialka("Shift OS\r\n");
-    say_to_serialka("Mini shell: help, clear, about, echo, sayser, time, uptime, drives, disk <A>, ls, cat, write\r\n> ");
+    say_to_serialka("Mini shell: help, clear, about, echo, sayser, time, uptime, drives, disk <A>, ls, cat, write, stat\r\n> ");
 
     while (1)
     {
@@ -346,6 +346,7 @@ void mega_tusa()
                 shelly_print_line("  ls", color, &row);
                 shelly_print_line("  cat <path>", color, &row);
                 shelly_print_line("  write <path> <text>", color, &row);
+                shelly_print_line("  stat <path>", color, &row);
             }
             else if (stroki_odinakovie(word, "clear"))
             {
@@ -482,6 +483,31 @@ void mega_tusa()
                             shelly_print_line("write: ok", color, &row);
                         }
                     }
+                }
+            }
+            else if (nachinaetsya_s(word, "stat "))
+            {
+                char path[32];
+                unsigned int razmer;
+                unsigned int sozdan;
+                unsigned int izmenen;
+
+                normalize_path(path, word + 5, current_disk);
+                if (!vfs_meta(path, &razmer, &sozdan, &izmenen) && !vfs_meta(word + 5, &razmer, &sozdan, &izmenen))
+                {
+                    shelly_print_line("stat: file not found", color, &row);
+                }
+                else
+                {
+                    out_pos = 0;
+                    append_text(out, &out_pos, "size=");
+                    append_u32_dec(out, &out_pos, razmer);
+                    append_text(out, &out_pos, " created=");
+                    append_u32_dec(out, &out_pos, sozdan);
+                    append_text(out, &out_pos, " modified=");
+                    append_u32_dec(out, &out_pos, izmenen);
+                    out[out_pos] = 0;
+                    shelly_print_line(out, color, &row);
                 }
             }
             else if (len == 0)

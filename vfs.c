@@ -6,11 +6,15 @@ typedef struct
 {
     char put[32];
     char tekst[128];
+    unsigned int razmer;
+    unsigned int sozdan;
+    unsigned int izmenen;
 } VfsFile;
 
 static VfsFile failiki[8];
 static int skolko_failov = 0;
 static unsigned char sklad[4096];
+static unsigned int vfschas = 0;
 
 #define ATAIOBASE 0x1F0
 #define VFSDISKLBA 0
@@ -84,6 +88,22 @@ static void strcopy31(char* dst, const char* src)
         i = i + 1;
     }
     dst[i] = 0;
+}
+
+static void u32write(unsigned char* p, unsigned int v)
+{
+    p[0] = (unsigned char)(v & 0xFF);
+    p[1] = (unsigned char)((v >> 8) & 0xFF);
+    p[2] = (unsigned char)((v >> 16) & 0xFF);
+    p[3] = (unsigned char)((v >> 24) & 0xFF);
+}
+
+static unsigned int u32read(const unsigned char* p)
+{
+    return ((unsigned int)p[0]) |
+           (((unsigned int)p[1]) << 8) |
+           (((unsigned int)p[2]) << 16) |
+           (((unsigned int)p[3]) << 24);
 }
 
 static void memzero(unsigned char* p, int n)
@@ -230,6 +250,7 @@ static int atawritesectors(unsigned int lba, unsigned char count, const unsigned
 static void vfssetdefaults()
 {
     skolko_failov = 0;
+    vfschas = 1;
 }
 
 static int vfsloadfromdisk()
@@ -242,7 +263,7 @@ static int vfsloadfromdisk()
         return 0;
     }
 
-    if (!(sklad[0] == 'S' && sklad[1] == 'V' && sklad[2] == 'F' && sklad[3] == '1'))
+    if (!(sklad[0] == 'S' && sklad[1] == 'V' && sklad[2] == 'F' && sklad[3] == '2'))
     {
         return 0;
     }
@@ -254,6 +275,12 @@ static int vfsloadfromdisk()
 
     skolko_failov = sklad[4];
     pos = 5;
+    vfschas = u32read(sklad + pos);
+    pos = pos + 4;
+    if (vfschas == 0)
+    {
+        vfschas = 1;
+    }
 
     i = 0;
     while (i < skolko_failov)
@@ -262,10 +289,31 @@ static int vfsloadfromdisk()
         pos = pos + 32;
         strcopy127(failiki[i].tekst, (const char*)(sklad + pos));
         pos = pos + 128;
+        failiki[i].razmer = u32read(sklad + pos);
+        pos = pos + 4;
+        failiki[i].sozdan = u32read(sklad + pos);
+        pos = pos + 4;
+        failiki[i].izmenen = u32read(sklad + pos);
+        pos = pos + 4;
 
         if (!strfits31(failiki[i].put) || !strfits127(failiki[i].tekst))
         {
             return 0;
+        }
+
+        if (failiki[i].razmer > 127)
+        {
+            failiki[i].razmer = (unsigned int)strlen127(failiki[i].tekst);
+        }
+
+        if (failiki[i].sozdan == 0)
+        {
+            failiki[i].sozdan = 1;
+        }
+
+        if (failiki[i].izmenen == 0)
+        {
+            failiki[i].izmenen = failiki[i].sozdan;
         }
 
         i = i + 1;
@@ -283,8 +331,10 @@ static void vfssavetodisk()
     sklad[0] = 'S';
     sklad[1] = 'V';
     sklad[2] = 'F';
-    sklad[3] = '1';
+    sklad[3] = '2';
     sklad[4] = (unsigned char)skolko_failov;
+    u32write(sklad + pos, vfschas);
+    pos = pos + 4;
 
     while (i < skolko_failov)
     {
@@ -292,6 +342,12 @@ static void vfssavetodisk()
         pos = pos + 32;
         strcopy127((char*)(sklad + pos), failiki[i].tekst);
         pos = pos + 128;
+        u32write(sklad + pos, failiki[i].razmer);
+        pos = pos + 4;
+        u32write(sklad + pos, failiki[i].sozdan);
+        pos = pos + 4;
+        u32write(sklad + pos, failiki[i].izmenen);
+        pos = pos + 4;
         i = i + 1;
     }
 
@@ -373,9 +429,38 @@ int vfs_write(const char* path, const char* text)
         idx = skolko_failov;
         skolko_failov = skolko_failov + 1;
         strcopy31(failiki[idx].put, path);
+        failiki[idx].sozdan = vfschas;
     }
 
+    failiki[idx].razmer = (unsigned int)strlen127(text);
+    failiki[idx].izmenen = vfschas;
+    vfschas = vfschas + 1;
     strcopy127(failiki[idx].tekst, text);
     vfssavetodisk();
+    return 1;
+}
+
+int vfs_meta(const char* path, unsigned int* razmer, unsigned int* sozdan, unsigned int* izmenen)
+{
+    int idx = findindex(path);
+
+    if (idx < 0)
+    {
+        return 0;
+    }
+
+    if (razmer)
+    {
+        *razmer = failiki[idx].razmer;
+    }
+    if (sozdan)
+    {
+        *sozdan = failiki[idx].sozdan;
+    }
+    if (izmenen)
+    {
+        *izmenen = failiki[idx].izmenen;
+    }
+
     return 1;
 }
