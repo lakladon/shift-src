@@ -6,6 +6,8 @@ typedef struct
 {
     char put[32];
     char tekst[128];
+    unsigned int created;
+    unsigned int modified;
 } VfsFile;
 
 static VfsFile failiki[8];
@@ -230,6 +232,13 @@ static int atawritesectors(unsigned int lba, unsigned char count, const unsigned
 static void vfssetdefaults()
 {
     skolko_failov = 0;
+    int i = 0;
+    while (i < 8)
+    {
+        failiki[i].created = 0;
+        failiki[i].modified = 0;
+        i = i + 1;
+    }
 }
 
 static int vfsloadfromdisk()

@@ -5,3 +5,4 @@ os.bin
 kernel.bin
 boot.bin
 vfs.img
+vfs.c.backup
