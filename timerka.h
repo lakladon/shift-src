@@ -5,5 +5,6 @@ void timerka_on();
 void timerka_update();
 unsigned int uptime_sec();
 void rtc_time_hms(unsigned char* h, unsigned char* m, unsigned char* s);
+unsigned int rtc_unix_time();
 
 #endif
