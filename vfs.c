@@ -1,6 +1,7 @@
 #include "vfs.h"
 #include "stroki.h"
 #include "iozh.h"
+#include "timerka.h"
 
 typedef struct
 {
@@ -14,7 +15,6 @@ typedef struct
 static VfsFile failiki[8];
 static int skolko_failov = 0;
 static unsigned char sklad[4096];
-static unsigned int vfschas = 0;
 
 #define ATAIOBASE 0x1F0
 #define VFSDISKLBA 0
@@ -250,7 +250,6 @@ static int atawritesectors(unsigned int lba, unsigned char count, const unsigned
 static void vfssetdefaults()
 {
     skolko_failov = 0;
-    vfschas = 1;
 }
 
 static int vfsloadfromdisk()
@@ -263,7 +262,7 @@ static int vfsloadfromdisk()
         return 0;
     }
 
-    if (!(sklad[0] == 'S' && sklad[1] == 'V' && sklad[2] == 'F' && sklad[3] == '2'))
+    if (!(sklad[0] == 'S' && sklad[1] == 'V' && sklad[2] == 'F' && sklad[3] == '3'))
     {
         return 0;
     }
@@ -275,12 +274,6 @@ static int vfsloadfromdisk()
 
     skolko_failov = sklad[4];
     pos = 5;
-    vfschas = u32read(sklad + pos);
-    pos = pos + 4;
-    if (vfschas == 0)
-    {
-        vfschas = 1;
-    }
 
     i = 0;
     while (i < skolko_failov)
@@ -306,16 +299,6 @@ static int vfsloadfromdisk()
             failiki[i].razmer = (unsigned int)strlen127(failiki[i].tekst);
         }
 
-        if (failiki[i].sozdan == 0)
-        {
-            failiki[i].sozdan = 1;
-        }
-
-        if (failiki[i].izmenen == 0)
-        {
-            failiki[i].izmenen = failiki[i].sozdan;
-        }
-
         i = i + 1;
     }
 
@@ -331,10 +314,8 @@ static void vfssavetodisk()
     sklad[0] = 'S';
     sklad[1] = 'V';
     sklad[2] = 'F';
-    sklad[3] = '2';
+    sklad[3] = '3';
     sklad[4] = (unsigned char)skolko_failov;
-    u32write(sklad + pos, vfschas);
-    pos = pos + 4;
 
     while (i < skolko_failov)
     {
@@ -366,6 +347,16 @@ static int findindex(const char* path)
         i = i + 1;
     }
     return -1;
+}
+
+static unsigned int vfspoxixtime()
+{
+    unsigned int t = rtc_unix_time();
+    if (t == 0)
+    {
+        t = 946684800u + uptime_sec();
+    }
+    return t;
 }
 
 void vfs_init()
@@ -413,11 +404,14 @@ int vfs_read(const char* path, char* out, int maxlen)
 int vfs_write(const char* path, const char* text)
 {
     int idx = findindex(path);
+    unsigned int now;
 
     if (!strfits31(path) || !strfits127(text) || strlen31(path) == 0)
     {
         return 0;
     }
+
+    now = vfspoxixtime();
 
     if (idx < 0)
     {
@@ -429,12 +423,11 @@ int vfs_write(const char* path, const char* text)
         idx = skolko_failov;
         skolko_failov = skolko_failov + 1;
         strcopy31(failiki[idx].put, path);
-        failiki[idx].sozdan = vfschas;
+        failiki[idx].sozdan = now;
     }
 
     failiki[idx].razmer = (unsigned int)strlen127(text);
-    failiki[idx].izmenen = vfschas;
-    vfschas = vfschas + 1;
+    failiki[idx].izmenen = now;
     strcopy127(failiki[idx].tekst, text);
     vfssavetodisk();
     return 1;
