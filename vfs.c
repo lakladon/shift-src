@@ -250,6 +250,13 @@ static int atawritesectors(unsigned int lba, unsigned char count, const unsigned
 static void vfssetdefaults()
 {
     skolko_failov = 0;
+    int i = 0;
+    while (i < 8)
+    {
+        failiki[i].created = 0;
+        failiki[i].modified = 0;
+        i = i + 1;
+    }
 }
 
 static int vfsloadfromdisk()
