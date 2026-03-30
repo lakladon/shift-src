@@ -16,7 +16,9 @@ typedef struct
 static VfsFile failiki[8];
 static int skolko_failov = 0;
 static unsigned char sklad[4096];
-static int disk_connected = 0;
+static int disk_connected_a = 0;
+static int disk_connected_b = 0;
+static unsigned char storage_drive = 0;
 
 #define ATAIOBASE 0x1F0
 #define VFSDISKLBA 128
@@ -156,7 +158,69 @@ static int atawaitdrq()
     return 0;
 }
 
-static int atareadsectors(unsigned int lba, unsigned char count, unsigned char* out)
+static int ataidentify(unsigned char drive)
+{
+    int i;
+    unsigned char st;
+    unsigned char cl;
+    unsigned char ch;
+
+    if (!atawaitnotbsy())
+    {
+        return 0;
+    }
+
+    zhmyak_out(ATAIOBASE + 6, (unsigned char)(0xE0 | ((drive & 1) << 4)));
+    zhmyak_out(ATAIOBASE + 2, 0);
+    zhmyak_out(ATAIOBASE + 3, 0);
+    zhmyak_out(ATAIOBASE + 4, 0);
+    zhmyak_out(ATAIOBASE + 5, 0);
+    zhmyak_out(ATAIOBASE + 7, 0xEC);
+
+    st = zhmyak_in(ATAIOBASE + 7);
+    if (st == 0)
+    {
+        return 0;
+    }
+
+    i = 0;
+    while (i < 100000)
+    {
+        st = zhmyak_in(ATAIOBASE + 7);
+        if (st & 0x01)
+        {
+            return 0;
+        }
+        if (st & 0x08)
+        {
+            break;
+        }
+        i = i + 1;
+    }
+
+    if (i >= 100000)
+    {
+        return 0;
+    }
+
+    cl = zhmyak_in(ATAIOBASE + 4);
+    ch = zhmyak_in(ATAIOBASE + 5);
+    if (cl != 0 || ch != 0)
+    {
+        return 0;
+    }
+
+    i = 0;
+    while (i < 256)
+    {
+        (void)zhmyak_in16(ATAIOBASE + 0);
+        i = i + 1;
+    }
+
+    return 1;
+}
+
+static int atareadsectors(unsigned char drive, unsigned int lba, unsigned char count, unsigned char* out)
 {
     unsigned int s = 0;
 
@@ -174,7 +238,7 @@ static int atareadsectors(unsigned int lba, unsigned char count, unsigned char* 
             return 0;
         }
 
-        zhmyak_out(ATAIOBASE + 6, (unsigned char)(0xE0 | ((lba >> 24) & 0x0F)));
+        zhmyak_out(ATAIOBASE + 6, (unsigned char)(0xE0 | ((drive & 1) << 4) | ((lba >> 24) & 0x0F)));
         zhmyak_out(ATAIOBASE + 2, 1);
         zhmyak_out(ATAIOBASE + 3, (unsigned char)(lba & 0xFF));
         zhmyak_out(ATAIOBASE + 4, (unsigned char)((lba >> 8) & 0xFF));
@@ -202,7 +266,7 @@ static int atareadsectors(unsigned int lba, unsigned char count, unsigned char* 
     return 1;
 }
 
-static int atawritesectors(unsigned int lba, unsigned char count, const unsigned char* in)
+static int atawritesectors(unsigned char drive, unsigned int lba, unsigned char count, const unsigned char* in)
 {
     unsigned int s = 0;
 
@@ -220,7 +284,7 @@ static int atawritesectors(unsigned int lba, unsigned char count, const unsigned
             return 0;
         }
 
-        zhmyak_out(ATAIOBASE + 6, (unsigned char)(0xE0 | ((lba >> 24) & 0x0F)));
+        zhmyak_out(ATAIOBASE + 6, (unsigned char)(0xE0 | ((drive & 1) << 4) | ((lba >> 24) & 0x0F)));
         zhmyak_out(ATAIOBASE + 2, 1);
         zhmyak_out(ATAIOBASE + 3, (unsigned char)(lba & 0xFF));
         zhmyak_out(ATAIOBASE + 4, (unsigned char)((lba >> 8) & 0xFF));
@@ -341,13 +405,42 @@ static int parent_dir_exists(const char* path)
     return failiki[idx].tip == VFSTYPEDIR;
 }
 
+static int is_disk_letter_connected(char disk)
+{
+    if (disk >= 'a' && disk <= 'z')
+    {
+        disk = (char)(disk - ('a' - 'A'));
+    }
+
+    if (disk == 'A')
+    {
+        return disk_connected_a;
+    }
+    if (disk == 'B')
+    {
+        return disk_connected_b;
+    }
+
+    return 0;
+}
+
+static int path_disk_connected(const char* path)
+{
+    if (!has_disk_prefix(path))
+    {
+        return 0;
+    }
+
+    return is_disk_letter_connected(path[0]);
+}
+
 static int vfsloadfromdisk()
 {
     int i;
     int pos;
     int v4;
 
-    if (!atareadsectors(VFSDISKLBA, VFSDISKSECTORS, sklad))
+    if (!atareadsectors(storage_drive, VFSDISKLBA, VFSDISKSECTORS, sklad))
     {
         return 0;
     }
@@ -422,7 +515,7 @@ static void vfssavetodisk()
     int i = 0;
     int pos = 5;
 
-    if (!disk_connected)
+    if (!disk_connected_a && !disk_connected_b)
     {
         return;
     }
@@ -451,7 +544,7 @@ static void vfssavetodisk()
         i = i + 1;
     }
 
-    atawritesectors(VFSDISKLBA, VFSDISKSECTORS, sklad);
+    atawritesectors(storage_drive, VFSDISKLBA, VFSDISKSECTORS, sklad);
 }
 
 static int findindex(const char* path)
@@ -480,14 +573,22 @@ static unsigned int vfspoxixtime()
 
 void vfs_init()
 {
-    if (!atareadsectors(VFSDISKLBA, 1, sklad))
+    disk_connected_a = ataidentify(0);
+    disk_connected_b = ataidentify(1);
+
+    if (!disk_connected_a && !disk_connected_b)
     {
-        disk_connected = 0;
         vfssetdefaults();
         return;
     }
 
-    disk_connected = 1;
+    storage_drive = disk_connected_a ? 0 : 1;
+
+    if (!atareadsectors(storage_drive, VFSDISKLBA, 1, sklad))
+    {
+        vfssetdefaults();
+        return;
+    }
 
     if (!vfsloadfromdisk())
     {
@@ -515,7 +616,7 @@ int vfs_read(const char* path, char* out, int maxlen)
     int idx = findindex(path);
     int i = 0;
 
-    if (idx < 0 || maxlen <= 0 || failiki[idx].tip == VFSTYPEDIR)
+    if (idx < 0 || maxlen <= 0 || failiki[idx].tip == VFSTYPEDIR || !path_disk_connected(path))
     {
         return 0;
     }
@@ -534,12 +635,12 @@ int vfs_write(const char* path, const char* text)
     int idx = findindex(path);
     unsigned int now;
 
-    if (!disk_connected)
+    if (!disk_connected_a && !disk_connected_b)
     {
         return 0;
     }
 
-    if (!strfits31(path) || !strfits127(text) || strlen31(path) == 0 || !is_valid_path(path) || is_root_path(path))
+    if (!strfits31(path) || !strfits127(text) || strlen31(path) == 0 || !is_valid_path(path) || is_root_path(path) || !path_disk_connected(path))
     {
         return 0;
     }
@@ -581,12 +682,12 @@ int vfs_mkdir(const char* path)
     int idx = findindex(path);
     unsigned int now;
 
-    if (!disk_connected)
+    if (!disk_connected_a && !disk_connected_b)
     {
         return 0;
     }
 
-    if (!strfits31(path) || strlen31(path) == 0 || !is_valid_path(path) || is_root_path(path))
+    if (!strfits31(path) || strlen31(path) == 0 || !is_valid_path(path) || is_root_path(path) || !path_disk_connected(path))
     {
         return 0;
     }
@@ -627,7 +728,7 @@ int vfs_mkdir(const char* path)
 int vfs_is_dir(const char* path)
 {
     int idx = findindex(path);
-    if (idx < 0)
+    if (idx < 0 || !path_disk_connected(path))
     {
         return 0;
     }
@@ -647,7 +748,7 @@ int vfs_meta(const char* path, unsigned int* razmer, unsigned int* sozdan, unsig
 {
     int idx = findindex(path);
 
-    if (idx < 0)
+    if (idx < 0 || !path_disk_connected(path))
     {
         return 0;
     }
@@ -668,7 +769,7 @@ int vfs_meta(const char* path, unsigned int* razmer, unsigned int* sozdan, unsig
     return 1;
 }
 
-int vfs_disk_connected()
+int vfs_disk_connected(char disk)
 {
-    return disk_connected;
+    return is_disk_letter_connected(disk);
 }

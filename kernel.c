@@ -43,7 +43,7 @@ static void shelly_reset_screen(unsigned char color, int* row)
 {
     ochisti_ekranchik(color);
     pishi_na_ekran("Shift OS (VGA)", color, 0, 0);
-    pishi_na_ekran("Mini shell: help, drives, disk A, ls/cat/write/mkdir/stat", color, 1, 0);
+    pishi_na_ekran("Mini shell: help, drives, disk A|B, ls/cat/write/mkdir/stat", color, 1, 0);
     say_to_serialka("\r\n[screen cleared]\r\n");
     *row = 2;
 }
@@ -347,21 +347,38 @@ void mega_tusa()
     int hist_count = 0;
     int hist_pos = -1;
     int e0_prefix = 0;
-    char current_disk = 'A';
-    char cwd[32] = "A:/";
+    char current_disk;
+    char cwd[32];
 
     ubi_mig_stroku();
     ochisti_ekranchik(color);
     pishi_na_ekran("Shift OS (VGA)", color, 0, 0);
-    pishi_na_ekran("Mini shell: help, drives, disk A, pwd/cd/ls/cat/write/mkdir", color, 1, 0);
+    pishi_na_ekran("Mini shell: help, drives, disk A|B, pwd/cd/ls/cat/write/mkdir", color, 1, 0);
     pishi_na_ekran("> ", color, row, col);
     col = 2;
 
     serialka_on();
     timerka_on();
     vfs_init();
+
+    if (vfs_disk_connected('A'))
+    {
+        current_disk = 'A';
+        str_copy31(cwd, "A:/");
+    }
+    else if (vfs_disk_connected('B'))
+    {
+        current_disk = 'B';
+        str_copy31(cwd, "B:/");
+    }
+    else
+    {
+        current_disk = 'A';
+        str_copy31(cwd, "A:/");
+    }
+
     say_to_serialka("Shift OS\r\n");
-    say_to_serialka("Mini shell: help, clear, about, echo, sayser, time, uptime, drives, disk <A>, pwd, cd, ls, cat, write, mkdir, stat\r\n> ");
+    say_to_serialka("Mini shell: help, clear, about, echo, sayser, time, uptime, drives, disk <A|B>, pwd, cd, ls, cat, write, mkdir, stat\r\n> ");
 
     while (1)
     {
@@ -487,7 +504,7 @@ void mega_tusa()
                 shelly_print_line("  time", color, &row);
                 shelly_print_line("  uptime", color, &row);
                 shelly_print_line("  drives", color, &row);
-                shelly_print_line("  disk <A>", color, &row);
+                shelly_print_line("  disk <A|B>", color, &row);
                 shelly_print_line("  pwd", color, &row);
                 shelly_print_line("  cd <path|..>", color, &row);
                 shelly_print_line("  ls [path]", color, &row);
@@ -515,13 +532,25 @@ void mega_tusa()
             }
             else if (stroki_odinakovie(word, "drives"))
             {
-                if (vfs_disk_connected())
+                int a = vfs_disk_connected('A');
+                int b = vfs_disk_connected('B');
+
+                if (a)
                 {
-                    shelly_print_line("Drives: A (подключён)", color, &row);
+                    shelly_print_line("Drive A: подключён", color, &row);
                 }
                 else
                 {
-                    shelly_print_line("Drives: A (не подключён)", color, &row);
+                    shelly_print_line("Drive A: не подключён", color, &row);
+                }
+
+                if (b)
+                {
+                    shelly_print_line("Drive B: подключён", color, &row);
+                }
+                else
+                {
+                    shelly_print_line("Drive B: не подключён", color, &row);
                 }
             }
             else if (nachinaetsya_s(word, "disk "))
@@ -532,22 +561,39 @@ void mega_tusa()
                     d = (char)(d - ('a' - 'A'));
                 }
 
-                if (word[5] && !word[6] && d == 'A')
+                if (word[5] && !word[6] && (d == 'A' || d == 'B'))
                 {
-                    if (vfs_disk_connected())
+                    if (vfs_disk_connected(d))
                     {
-                        current_disk = 'A';
-                        str_copy31(cwd, "A:/");
-                        shelly_print_line("disk: current drive = A", color, &row);
+                        current_disk = d;
+                        cwd[0] = d;
+                        cwd[1] = ':';
+                        cwd[2] = '/';
+                        cwd[3] = 0;
+                        if (d == 'A')
+                        {
+                            shelly_print_line("disk: current drive = A", color, &row);
+                        }
+                        else
+                        {
+                            shelly_print_line("disk: current drive = B", color, &row);
+                        }
                     }
                     else
                     {
-                        shelly_print_line("disk A: не подключён", color, &row);
+                        if (d == 'A')
+                        {
+                            shelly_print_line("disk A: не подключён", color, &row);
+                        }
+                        else
+                        {
+                            shelly_print_line("disk B: не подключён", color, &row);
+                        }
                     }
                 }
                 else
                 {
-                    shelly_print_line("disk: only A is available", color, &row);
+                    shelly_print_line("disk: usage disk <A|B>", color, &row);
                 }
             }
             else if (stroki_odinakovie(word, "uptime"))
