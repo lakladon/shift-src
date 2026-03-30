@@ -124,7 +124,7 @@ static void memzero(unsigned char* p, int n)
     }
 }
 
-static int atawaitnotbsy()
+static int atawaitnotbsy(void)
 {
     int t = 0;
     while (t < 100000)
@@ -139,7 +139,7 @@ static int atawaitnotbsy()
     return 0;
 }
 
-static int atawaitdrq()
+static int atawaitdrq(void)
 {
     int t = 0;
     while (t < 100000)
@@ -317,7 +317,7 @@ static int atawritesectors(unsigned char drive, unsigned int lba, unsigned char 
     return atawaitnotbsy();
 }
 
-static void vfssetdefaults()
+static void vfssetdefaults(void)
 {
     skolko_failov = 0;
     int i = 0;
@@ -434,7 +434,7 @@ static int path_disk_connected(const char* path)
     return is_disk_letter_connected(path[0]);
 }
 
-static int vfsloadfromdisk()
+static int vfsloadfromdisk(void)
 {
     int i;
     int pos;
@@ -510,7 +510,7 @@ static int vfsloadfromdisk()
     return 1;
 }
 
-static void vfssavetodisk()
+static void vfssavetodisk(void)
 {
     int i = 0;
     int pos = 5;
@@ -561,7 +561,7 @@ static int findindex(const char* path)
     return -1;
 }
 
-static unsigned int vfspoxixtime()
+static unsigned int vfspoxixtime(void)
 {
     unsigned int t = rtc_unix_time();
     if (t == 0)

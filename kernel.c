@@ -8,9 +8,9 @@
 #include "irqka.h"
 #include "vfs.h"
 
-void mega_tusa();
+void mega_tusa(void);
 
-void _start()
+void _start(void)
 {
     mega_tusa();
     while (1)
@@ -118,14 +118,23 @@ static int has_disk_prefix(const char* p)
     return p[0] && p[1] == ':' && p[2] == '/';
 }
 
+static char disk_upper(char d)
+{
+    if (d >= 'a' && d <= 'z')
+    {
+        return (char)(d - ('a' - 'A'));
+    }
+    return d;
+}
+
 static int path_belongs_to_disk(const char* p, char disk)
 {
     if (has_disk_prefix(p))
     {
-        return p[0] == disk;
+        return disk_upper(p[0]) == disk_upper(disk);
     }
 
-    return disk == 'A';
+    return disk_upper(disk) == 'A';
 }
 
 static int str_len31(const char* s)
@@ -171,6 +180,7 @@ static void resolve_path(char* out, const char* in, char disk, const char* cwd)
     if (has_disk_prefix(in))
     {
         str_copy31(out, in);
+        out[0] = disk_upper(out[0]);
         trim_trailing_slash(out);
         return;
     }
@@ -337,7 +347,7 @@ static void redraw_input_line(unsigned char color, int row, char* word, int* len
     *col = 2 + *len;
 }
 
-void mega_tusa()
+void mega_tusa(void)
 {
     const unsigned char color = 0x0F;
     int row = 2;
@@ -641,6 +651,10 @@ void mega_tusa()
                     if (path_is_root(path) || (vfs_exists(path) && vfs_is_dir(path)))
                     {
                         str_copy31(cwd, path);
+                        if (has_disk_prefix(cwd))
+                        {
+                            current_disk = disk_upper(cwd[0]);
+                        }
                         shelly_print_line("cd: ok", color, &row);
                     }
                     else
@@ -670,10 +684,16 @@ void mega_tusa()
                 }
                 else
                 {
+                    char list_disk = current_disk;
+                    if (has_disk_prefix(dir))
+                    {
+                        list_disk = disk_upper(dir[0]);
+                    }
+
                 while (i < vfs_count())
                 {
                     const char* p = vfs_path_at(i);
-                    if (p && path_belongs_to_disk(p, current_disk) && is_immediate_child_of(p, dir))
+                    if (p && path_belongs_to_disk(p, list_disk) && is_immediate_child_of(p, dir))
                     {
                         if (vfs_type_at(i) == 1)
                         {

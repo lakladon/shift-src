@@ -24,6 +24,9 @@ os.bin: boot.bin kernel.bin
 	truncate -s 1474560 os.bin
 
 run: os.bin vfs.img
+	qemu-system-i386 -serial stdio -monitor none -no-reboot -no-shutdown -drive file=os.bin,if=floppy,format=raw -boot a -drive file=vfs.img,if=ide,format=raw
+
+run-gui: os.bin vfs.img
 	qemu-system-i386 -drive file=os.bin,if=floppy,format=raw -boot a -drive file=vfs.img,if=ide,format=raw
 clean:
 	rm -f boot.bin kernel.bin os.bin k.o kernel.o iozh.o serialka.o ekran.o klava.o stroki.o timerka.o irqka.o vfs.o

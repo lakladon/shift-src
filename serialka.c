@@ -1,12 +1,12 @@
 #include "serialka.h"
 #include "iozh.h"
 
-static int serialka_go()
+static int serialka_go(void)
 {
     return zhmyak_in(0x3F8 + 5) & 0x20;
 }
 
-void serialka_on()
+void serialka_on(void)
 {
     zhmyak_out(0x3F8 + 1, 0x00);
     zhmyak_out(0x3F8 + 3, 0x80);

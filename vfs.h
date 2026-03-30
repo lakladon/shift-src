@@ -1,8 +1,8 @@
 #ifndef VFS_H
 #define VFS_H
 
-void vfs_init();
-int vfs_count();
+void vfs_init(void);
+int vfs_count(void);
 const char* vfs_path_at(int index);
 int vfs_type_at(int index);
 int vfs_read(const char* path, char* out, int max_len);

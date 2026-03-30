@@ -1,6 +1,6 @@
 #ifndef IRQKA_H
 #define IRQKA_H
 
-void irqka_on();
+void irqka_on(void);
 
 #endif

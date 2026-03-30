@@ -29,7 +29,7 @@ static void idt_set_gate(unsigned char vec, unsigned int handler, unsigned short
     idt[vec].off_hi = (unsigned short)((handler >> 16) & 0xFFFFu);
 }
 
-static void pic_remap_and_mask()
+static void pic_remap_and_mask(void)
 {
     unsigned char a1;
     unsigned char a2;
@@ -53,13 +53,13 @@ static void pic_remap_and_mask()
     zhmyak_out(0xA1, 0xFF);
 }
 
-void irq0_c_handler()
+void irq0_c_handler(void)
 {
     timerka_tick_irq0();
     zhmyak_out(0x20, 0x20);
 }
 
-__attribute__((naked)) void irq0_stub()
+__attribute__((naked)) void irq0_stub(void)
 {
     __asm__ volatile (
         "pusha\n"
@@ -69,7 +69,7 @@ __attribute__((naked)) void irq0_stub()
     );
 }
 
-__attribute__((naked)) void irq_ignore_stub()
+__attribute__((naked)) void irq_ignore_stub(void)
 {
     __asm__ volatile ("iret\n");
 }
