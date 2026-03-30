@@ -5,6 +5,7 @@
 #include "klava.h"
 #include "stroki.h"
 #include "timerka.h"
+#include "irqka.h"
 #include "vfs.h"
 
 void mega_tusa();
@@ -359,6 +360,7 @@ void mega_tusa()
 
     serialka_on();
     timerka_on();
+    irqka_on();
     vfs_init();
 
     if (vfs_disk_connected('A'))
@@ -386,8 +388,6 @@ void mega_tusa()
         char c;
         char out[64];
         int out_pos;
-
-        timerka_update();
 
         if (!klava_est())
         {

@@ -2,19 +2,6 @@
 #include "iozh.h"
 
 static unsigned int tiks = 0;
-static unsigned short last_pit = 0;
-static int last_set = 0;
-
-static unsigned short pit_read_counter0()
-{
-    unsigned char lo;
-    unsigned char hi;
-
-    zhmyak_out(0x43, 0x00);
-    lo = zhmyak_in(0x40);
-    hi = zhmyak_in(0x40);
-    return (unsigned short)(lo | ((unsigned short)hi << 8));
-}
 
 static unsigned char cmos_read(unsigned char reg)
 {
@@ -48,28 +35,12 @@ void timerka_on()
     zhmyak_out(0x40, (unsigned char)(divisor & 0xFF));
     zhmyak_out(0x40, (unsigned char)(divisor >> 8));
 
-    last_pit = pit_read_counter0();
-    last_set = 1;
     tiks = 0;
 }
 
-void timerka_update()
+void timerka_tick_irq0()
 {
-    unsigned short now = pit_read_counter0();
-
-    if (!last_set)
-    {
-        last_pit = now;
-        last_set = 1;
-        return;
-    }
-
-    if (now > last_pit)
-    {
-        tiks = tiks + 1;
-    }
-
-    last_pit = now;
+    tiks = tiks + 1;
 }
 
 unsigned int uptime_sec()
