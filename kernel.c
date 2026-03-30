@@ -19,14 +19,24 @@ void _start()
 
 static void shelly_print_line(const char* s, unsigned char color, int* row)
 {
-    if (*row >= 25)
+    while (*row >= 25)
     {
-        *row = 2;
+        prokruti_ekran_s(2, color);
+        *row = 24;
     }
     pishi_na_ekran(s, color, *row, 0);
     say_to_serialka(s);
     say_to_serialka("\r\n");
     *row = *row + 1;
+}
+
+static void shelly_ensure_prompt_row(unsigned char color, int* row)
+{
+    while (*row >= 25)
+    {
+        prokruti_ekran_s(2, color);
+        *row = 24;
+    }
 }
 
 static void shelly_reset_screen(unsigned char color, int* row)
@@ -752,10 +762,7 @@ void mega_tusa()
                 shelly_print_line("Unknown command. Type: help", color, &row);
             }
 
-            if (row >= 25)
-            {
-                shelly_reset_screen(color, &row);
-            }
+            shelly_ensure_prompt_row(color, &row);
 
             pishi_na_ekran("> ", color, row, 0);
             say_to_serialka("> ");
