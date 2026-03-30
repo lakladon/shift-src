@@ -117,29 +117,77 @@ static int path_belongs_to_disk(const char* p, char disk)
     return disk == 'A';
 }
 
-static void normalize_path(char* out, const char* in, char disk)
+static int str_len31(const char* s)
+{
+    int i = 0;
+    while (i < 31 && s[i])
+    {
+        i = i + 1;
+    }
+    return i;
+}
+
+static void str_copy31(char* dst, const char* src)
+{
+    int i = 0;
+    while (i < 31 && src[i])
+    {
+        dst[i] = src[i];
+        i = i + 1;
+    }
+    dst[i] = 0;
+}
+
+static int path_is_root(const char* p)
+{
+    return has_disk_prefix(p) && p[3] == 0;
+}
+
+static void trim_trailing_slash(char* p)
+{
+    int len = str_len31(p);
+    while (len > 3 && p[len - 1] == '/')
+    {
+        p[len - 1] = 0;
+        len = len - 1;
+    }
+}
+
+static void resolve_path(char* out, const char* in, char disk, const char* cwd)
 {
     int i = 0;
 
     if (has_disk_prefix(in))
     {
-        while (i < 31 && in[i])
-        {
-            out[i] = in[i];
-            i = i + 1;
-        }
-        out[i] = 0;
+        str_copy31(out, in);
+        trim_trailing_slash(out);
         return;
     }
 
-    out[0] = disk;
-    out[1] = ':';
-    out[2] = '/';
-    i = 3;
+    if (!in[0] || stroki_odinakovie(in, "."))
+    {
+        str_copy31(out, cwd);
+        return;
+    }
 
     if (in[0] == '/')
     {
+        out[0] = disk;
+        out[1] = ':';
+        out[2] = '/';
+        i = 3;
         in = in + 1;
+    }
+    else
+    {
+        str_copy31(out, cwd);
+        i = str_len31(out);
+        if (i > 0 && i < 31 && out[i - 1] != '/')
+        {
+            out[i] = '/';
+            i = i + 1;
+            out[i] = 0;
+        }
     }
 
     while (i < 31 && *in)
@@ -149,6 +197,92 @@ static void normalize_path(char* out, const char* in, char disk)
         i = i + 1;
     }
     out[i] = 0;
+    trim_trailing_slash(out);
+}
+
+static void path_parent(char* out, const char* in)
+{
+    int len = str_len31(in);
+    int i;
+
+    if (len <= 3)
+    {
+        str_copy31(out, in);
+        out[3] = 0;
+        return;
+    }
+
+    str_copy31(out, in);
+    i = len - 1;
+    while (i > 2 && out[i] != '/')
+    {
+        i = i - 1;
+    }
+
+    if (i <= 2)
+    {
+        out[3] = 0;
+    }
+    else
+    {
+        out[i] = 0;
+    }
+}
+
+static int vfs_exists(const char* path)
+{
+    unsigned int r;
+    return vfs_meta(path, &r, 0, 0);
+}
+
+static int is_immediate_child_of(const char* child, const char* dir)
+{
+    int i = 0;
+    int prefix_len = str_len31(dir);
+
+    if (path_is_root(dir))
+    {
+        if (!(child[0] == dir[0] && child[1] == ':' && child[2] == '/'))
+        {
+            return 0;
+        }
+
+        i = 3;
+    }
+    else
+    {
+        while (i < prefix_len)
+        {
+            if (child[i] != dir[i])
+            {
+                return 0;
+            }
+            i = i + 1;
+        }
+
+        if (child[i] != '/')
+        {
+            return 0;
+        }
+
+        i = i + 1;
+    }
+
+    if (!child[i])
+    {
+        return 0;
+    }
+
+    while (child[i])
+    {
+        if (child[i] == '/')
+        {
+            return 0;
+        }
+        i = i + 1;
+    }
+
+    return 1;
 }
 
 static int str_len64(const char* s)
@@ -204,11 +338,12 @@ void mega_tusa()
     int hist_pos = -1;
     int e0_prefix = 0;
     char current_disk = 'A';
+    char cwd[32] = "A:/";
 
     ubi_mig_stroku();
     ochisti_ekranchik(color);
     pishi_na_ekran("Shift OS (VGA)", color, 0, 0);
-    pishi_na_ekran("Mini shell: help, drives, disk A, ls/cat/write/mkdir", color, 1, 0);
+    pishi_na_ekran("Mini shell: help, drives, disk A, pwd/cd/ls/cat/write/mkdir", color, 1, 0);
     pishi_na_ekran("> ", color, row, col);
     col = 2;
 
@@ -216,7 +351,7 @@ void mega_tusa()
     timerka_on();
     vfs_init();
     say_to_serialka("Shift OS\r\n");
-    say_to_serialka("Mini shell: help, clear, about, echo, sayser, time, uptime, drives, disk <A>, ls, cat, write, mkdir, stat\r\n> ");
+    say_to_serialka("Mini shell: help, clear, about, echo, sayser, time, uptime, drives, disk <A>, pwd, cd, ls, cat, write, mkdir, stat\r\n> ");
 
     while (1)
     {
@@ -343,7 +478,9 @@ void mega_tusa()
                 shelly_print_line("  uptime", color, &row);
                 shelly_print_line("  drives", color, &row);
                 shelly_print_line("  disk <A>", color, &row);
-                shelly_print_line("  ls", color, &row);
+                shelly_print_line("  pwd", color, &row);
+                shelly_print_line("  cd <path|..>", color, &row);
+                shelly_print_line("  ls [path]", color, &row);
                 shelly_print_line("  cat <path>", color, &row);
                 shelly_print_line("  write <path> <text>", color, &row);
                 shelly_print_line("  mkdir <path>", color, &row);
@@ -390,6 +527,7 @@ void mega_tusa()
                     if (vfs_disk_connected())
                     {
                         current_disk = 'A';
+                        str_copy31(cwd, "A:/");
                         shelly_print_line("disk: current drive = A", color, &row);
                     }
                     else
@@ -428,14 +566,58 @@ void mega_tusa()
                 out[out_pos] = 0;
                 shelly_print_line(out, color, &row);
             }
-            else if (stroki_odinakovie(word, "ls"))
+            else if (stroki_odinakovie(word, "pwd"))
             {
+                shelly_print_line(cwd, color, &row);
+            }
+            else if (nachinaetsya_s(word, "cd "))
+            {
+                char path[32];
+
+                if (stroki_odinakovie(word + 3, ".."))
+                {
+                    path_parent(cwd, cwd);
+                    shelly_print_line("cd: ok", color, &row);
+                }
+                else
+                {
+                    resolve_path(path, word + 3, current_disk, cwd);
+                    if (path_is_root(path) || (vfs_exists(path) && vfs_is_dir(path)))
+                    {
+                        str_copy31(cwd, path);
+                        shelly_print_line("cd: ok", color, &row);
+                    }
+                    else
+                    {
+                        shelly_print_line("cd: directory not found", color, &row);
+                    }
+                }
+            }
+            else if (stroki_odinakovie(word, "ls") || nachinaetsya_s(word, "ls "))
+            {
+                char dir[32];
                 int i = 0;
                 int shown = 0;
+
+                if (stroki_odinakovie(word, "ls"))
+                {
+                    str_copy31(dir, cwd);
+                }
+                else
+                {
+                    resolve_path(dir, word + 3, current_disk, cwd);
+                }
+
+                if (!(path_is_root(dir) || (vfs_exists(dir) && vfs_is_dir(dir))))
+                {
+                    shelly_print_line("ls: directory not found", color, &row);
+                }
+                else
+                {
                 while (i < vfs_count())
                 {
                     const char* p = vfs_path_at(i);
-                    if (p && path_belongs_to_disk(p, current_disk))
+                    if (p && path_belongs_to_disk(p, current_disk) && is_immediate_child_of(p, dir))
                     {
                         if (vfs_type_at(i) == 1)
                         {
@@ -458,17 +640,18 @@ void mega_tusa()
                 {
                     shelly_print_line("(empty)", color, &row);
                 }
+                }
             }
             else if (nachinaetsya_s(word, "cat "))
             {
                 char path[32];
-                normalize_path(path, word + 4, current_disk);
+                resolve_path(path, word + 4, current_disk, cwd);
 
-                if (vfs_is_dir(path) || vfs_is_dir(word + 4))
+                if (vfs_is_dir(path))
                 {
                     shelly_print_line("cat: is a directory", color, &row);
                 }
-                else if (!vfs_read(path, out, 64) && !vfs_read(word + 4, out, 64))
+                else if (!vfs_read(path, out, 64))
                 {
                     shelly_print_line("cat: file not found", color, &row);
                 }
@@ -501,7 +684,7 @@ void mega_tusa()
 
                     {
                         char full_path[32];
-                        normalize_path(full_path, path, current_disk);
+                        resolve_path(full_path, path, current_disk, cwd);
 
                         text = args + split + 1;
                         if (vfs_is_dir(full_path))
@@ -522,7 +705,7 @@ void mega_tusa()
             else if (nachinaetsya_s(word, "mkdir "))
             {
                 char path[32];
-                normalize_path(path, word + 6, current_disk);
+                resolve_path(path, word + 6, current_disk, cwd);
 
                 if (!vfs_mkdir(path))
                 {
@@ -540,8 +723,8 @@ void mega_tusa()
                 unsigned int sozdan;
                 unsigned int izmenen;
 
-                normalize_path(path, word + 5, current_disk);
-                if (!vfs_meta(path, &razmer, &sozdan, &izmenen) && !vfs_meta(word + 5, &razmer, &sozdan, &izmenen))
+                resolve_path(path, word + 5, current_disk, cwd);
+                if (!vfs_meta(path, &razmer, &sozdan, &izmenen))
                 {
                     shelly_print_line("stat: file not found", color, &row);
                 }
@@ -549,7 +732,7 @@ void mega_tusa()
                 {
                     out_pos = 0;
                     append_text(out, &out_pos, "type=");
-                    append_text(out, &out_pos, vfs_is_dir(path) || vfs_is_dir(word + 5) ? "dir" : "file");
+                    append_text(out, &out_pos, vfs_is_dir(path) ? "dir" : "file");
                     append_text(out, &out_pos, " ");
                     append_text(out, &out_pos, "size=");
                     append_u32_dec(out, &out_pos, razmer);
