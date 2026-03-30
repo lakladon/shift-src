@@ -1,22 +1,30 @@
 #include "vfs.h"
 #include "stroki.h"
 #include "iozh.h"
+#include "timerka.h"
 
 typedef struct
 {
     char put[32];
     char tekst[128];
-    unsigned int created;
-    unsigned int modified;
+    unsigned char tip;
+    unsigned int razmer;
+    unsigned int sozdan;
+    unsigned int izmenen;
 } VfsFile;
 
 static VfsFile failiki[8];
 static int skolko_failov = 0;
 static unsigned char sklad[4096];
+static int disk_connected = 0;
 
 #define ATAIOBASE 0x1F0
-#define VFSDISKLBA 0
+#define VFSDISKLBA 128
 #define VFSDISKSECTORS 8
+#define VFSTYPEFILE 0
+#define VFSTYPEDIR 1
+
+static int findindex(const char* path);
 
 static int strlen127(const char* s)
 {
@@ -86,6 +94,22 @@ static void strcopy31(char* dst, const char* src)
         i = i + 1;
     }
     dst[i] = 0;
+}
+
+static void u32write(unsigned char* p, unsigned int v)
+{
+    p[0] = (unsigned char)(v & 0xFF);
+    p[1] = (unsigned char)((v >> 8) & 0xFF);
+    p[2] = (unsigned char)((v >> 16) & 0xFF);
+    p[3] = (unsigned char)((v >> 24) & 0xFF);
+}
+
+static unsigned int u32read(const unsigned char* p)
+{
+    return ((unsigned int)p[0]) |
+           (((unsigned int)p[1]) << 8) |
+           (((unsigned int)p[2]) << 16) |
+           (((unsigned int)p[3]) << 24);
 }
 
 static void memzero(unsigned char* p, int n)
@@ -235,26 +259,105 @@ static void vfssetdefaults()
     int i = 0;
     while (i < 8)
     {
-        failiki[i].created = 0;
-        failiki[i].modified = 0;
+        failiki[i].tip = VFSTYPEFILE;
+        failiki[i].sozdan = 0;
+        failiki[i].izmenen = 0;
         i = i + 1;
     }
+}
+
+static int has_disk_prefix(const char* p)
+{
+    return p[0] && p[1] == ':' && p[2] == '/';
+}
+
+static int is_valid_path(const char* path)
+{
+    int i = 0;
+
+    if (!has_disk_prefix(path))
+    {
+        return 0;
+    }
+
+    while (path[i])
+    {
+        if (path[i] == ' ')
+        {
+            return 0;
+        }
+        i = i + 1;
+    }
+
+    return 1;
+}
+
+static int is_root_path(const char* path)
+{
+    return has_disk_prefix(path) && path[3] == 0;
+}
+
+static int parent_dir_exists(const char* path)
+{
+    int i = 0;
+    int last_slash = -1;
+    char parent[32];
+    int j;
+    int idx;
+
+    if (!has_disk_prefix(path))
+    {
+        return 0;
+    }
+
+    while (path[i])
+    {
+        if (path[i] == '/')
+        {
+            last_slash = i;
+        }
+        i = i + 1;
+    }
+
+    if (last_slash <= 2)
+    {
+        return 1;
+    }
+
+    j = 0;
+    while (j < last_slash && j < 31)
+    {
+        parent[j] = path[j];
+        j = j + 1;
+    }
+    parent[j] = 0;
+
+    idx = findindex(parent);
+    if (idx < 0)
+    {
+        return 0;
+    }
+
+    return failiki[idx].tip == VFSTYPEDIR;
 }
 
 static int vfsloadfromdisk()
 {
     int i;
     int pos;
+    int v4;
 
     if (!atareadsectors(VFSDISKLBA, VFSDISKSECTORS, sklad))
     {
         return 0;
     }
 
-    if (!(sklad[0] == 'S' && sklad[1] == 'V' && sklad[2] == 'F' && sklad[3] == '1'))
+    if (!(sklad[0] == 'S' && sklad[1] == 'V' && sklad[2] == 'F' && (sklad[3] == '3' || sklad[3] == '4')))
     {
         return 0;
     }
+
+    v4 = sklad[3] == '4';
 
     if (sklad[4] > 8)
     {
@@ -269,12 +372,43 @@ static int vfsloadfromdisk()
     {
         strcopy31(failiki[i].put, (const char*)(sklad + pos));
         pos = pos + 32;
+        if (v4)
+        {
+            failiki[i].tip = sklad[pos];
+            pos = pos + 1;
+        }
+        else
+        {
+            failiki[i].tip = VFSTYPEFILE;
+        }
         strcopy127(failiki[i].tekst, (const char*)(sklad + pos));
         pos = pos + 128;
+        failiki[i].razmer = u32read(sklad + pos);
+        pos = pos + 4;
+        failiki[i].sozdan = u32read(sklad + pos);
+        pos = pos + 4;
+        failiki[i].izmenen = u32read(sklad + pos);
+        pos = pos + 4;
 
         if (!strfits31(failiki[i].put) || !strfits127(failiki[i].tekst))
         {
             return 0;
+        }
+
+        if (!(failiki[i].tip == VFSTYPEFILE || failiki[i].tip == VFSTYPEDIR))
+        {
+            return 0;
+        }
+
+        if (failiki[i].razmer > 127)
+        {
+            failiki[i].razmer = (unsigned int)strlen127(failiki[i].tekst);
+        }
+
+        if (failiki[i].tip == VFSTYPEDIR)
+        {
+            failiki[i].tekst[0] = 0;
+            failiki[i].razmer = 0;
         }
 
         i = i + 1;
@@ -288,19 +422,32 @@ static void vfssavetodisk()
     int i = 0;
     int pos = 5;
 
+    if (!disk_connected)
+    {
+        return;
+    }
+
     memzero(sklad, 4096);
     sklad[0] = 'S';
     sklad[1] = 'V';
     sklad[2] = 'F';
-    sklad[3] = '1';
+    sklad[3] = '4';
     sklad[4] = (unsigned char)skolko_failov;
 
     while (i < skolko_failov)
     {
         strcopy31((char*)(sklad + pos), failiki[i].put);
         pos = pos + 32;
+        sklad[pos] = failiki[i].tip;
+        pos = pos + 1;
         strcopy127((char*)(sklad + pos), failiki[i].tekst);
         pos = pos + 128;
+        u32write(sklad + pos, failiki[i].razmer);
+        pos = pos + 4;
+        u32write(sklad + pos, failiki[i].sozdan);
+        pos = pos + 4;
+        u32write(sklad + pos, failiki[i].izmenen);
+        pos = pos + 4;
         i = i + 1;
     }
 
@@ -321,8 +468,27 @@ static int findindex(const char* path)
     return -1;
 }
 
+static unsigned int vfspoxixtime()
+{
+    unsigned int t = rtc_unix_time();
+    if (t == 0)
+    {
+        t = 946684800u + uptime_sec();
+    }
+    return t;
+}
+
 void vfs_init()
 {
+    if (!atareadsectors(VFSDISKLBA, 1, sklad))
+    {
+        disk_connected = 0;
+        vfssetdefaults();
+        return;
+    }
+
+    disk_connected = 1;
+
     if (!vfsloadfromdisk())
     {
         vfssetdefaults();
@@ -349,7 +515,7 @@ int vfs_read(const char* path, char* out, int maxlen)
     int idx = findindex(path);
     int i = 0;
 
-    if (idx < 0 || maxlen <= 0)
+    if (idx < 0 || maxlen <= 0 || failiki[idx].tip == VFSTYPEDIR)
     {
         return 0;
     }
@@ -366,11 +532,24 @@ int vfs_read(const char* path, char* out, int maxlen)
 int vfs_write(const char* path, const char* text)
 {
     int idx = findindex(path);
+    unsigned int now;
 
-    if (!strfits31(path) || !strfits127(text) || strlen31(path) == 0)
+    if (!disk_connected)
     {
         return 0;
     }
+
+    if (!strfits31(path) || !strfits127(text) || strlen31(path) == 0 || !is_valid_path(path) || is_root_path(path))
+    {
+        return 0;
+    }
+
+    if (!parent_dir_exists(path))
+    {
+        return 0;
+    }
+
+    now = vfspoxixtime();
 
     if (idx < 0)
     {
@@ -382,9 +561,114 @@ int vfs_write(const char* path, const char* text)
         idx = skolko_failov;
         skolko_failov = skolko_failov + 1;
         strcopy31(failiki[idx].put, path);
+        failiki[idx].tip = VFSTYPEFILE;
+        failiki[idx].sozdan = now;
+    }
+    else if (failiki[idx].tip == VFSTYPEDIR)
+    {
+        return 0;
     }
 
+    failiki[idx].razmer = (unsigned int)strlen127(text);
+    failiki[idx].izmenen = now;
     strcopy127(failiki[idx].tekst, text);
     vfssavetodisk();
     return 1;
+}
+
+int vfs_mkdir(const char* path)
+{
+    int idx = findindex(path);
+    unsigned int now;
+
+    if (!disk_connected)
+    {
+        return 0;
+    }
+
+    if (!strfits31(path) || strlen31(path) == 0 || !is_valid_path(path) || is_root_path(path))
+    {
+        return 0;
+    }
+
+    if (!parent_dir_exists(path))
+    {
+        return 0;
+    }
+
+    now = vfspoxixtime();
+
+    if (idx >= 0)
+    {
+        if (failiki[idx].tip == VFSTYPEDIR)
+        {
+            return 1;
+        }
+        return 0;
+    }
+
+    if (skolko_failov >= 8)
+    {
+        return 0;
+    }
+
+    idx = skolko_failov;
+    skolko_failov = skolko_failov + 1;
+    strcopy31(failiki[idx].put, path);
+    failiki[idx].tip = VFSTYPEDIR;
+    failiki[idx].tekst[0] = 0;
+    failiki[idx].razmer = 0;
+    failiki[idx].sozdan = now;
+    failiki[idx].izmenen = now;
+    vfssavetodisk();
+    return 1;
+}
+
+int vfs_is_dir(const char* path)
+{
+    int idx = findindex(path);
+    if (idx < 0)
+    {
+        return 0;
+    }
+    return failiki[idx].tip == VFSTYPEDIR;
+}
+
+int vfs_type_at(int index)
+{
+    if (index < 0 || index >= skolko_failov)
+    {
+        return -1;
+    }
+    return failiki[index].tip;
+}
+
+int vfs_meta(const char* path, unsigned int* razmer, unsigned int* sozdan, unsigned int* izmenen)
+{
+    int idx = findindex(path);
+
+    if (idx < 0)
+    {
+        return 0;
+    }
+
+    if (razmer)
+    {
+        *razmer = failiki[idx].razmer;
+    }
+    if (sozdan)
+    {
+        *sozdan = failiki[idx].sozdan;
+    }
+    if (izmenen)
+    {
+        *izmenen = failiki[idx].izmenen;
+    }
+
+    return 1;
+}
+
+int vfs_disk_connected()
+{
+    return disk_connected;
 }
