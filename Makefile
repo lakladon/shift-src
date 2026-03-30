@@ -24,12 +24,5 @@ os.bin: boot.bin kernel.bin
 
 run: os.bin vfs.img
 	qemu-system-i386 -drive file=os.bin,if=floppy,format=raw -boot a -drive file=vfs.img,if=ide,format=raw
-
-run-vga: os.bin vfs.img
-	qemu-system-i386 -drive file=os.bin,if=floppy,format=raw -boot a -drive file=vfs.img,if=ide,format=raw
-
-run-serial: os.bin vfs.img
-	qemu-system-i386 -drive file=os.bin,if=floppy,format=raw -boot a -drive file=vfs.img,if=ide,format=raw -monitor none -serial stdio -display none
-
 clean:
 	rm -f boot.bin kernel.bin os.bin k.o kernel.o iozh.o serialka.o ekran.o klava.o stroki.o timerka.o vfs.o

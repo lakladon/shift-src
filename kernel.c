@@ -367,7 +367,14 @@ void mega_tusa()
             }
             else if (stroki_odinakovie(word, "drives"))
             {
-                shelly_print_line("Drives: A", color, &row);
+                if (vfs_disk_connected())
+                {
+                    shelly_print_line("Drives: A (подключён)", color, &row);
+                }
+                else
+                {
+                    shelly_print_line("Drives: A (не подключён)", color, &row);
+                }
             }
             else if (nachinaetsya_s(word, "disk "))
             {
@@ -379,8 +386,15 @@ void mega_tusa()
 
                 if (word[5] && !word[6] && d == 'A')
                 {
-                    current_disk = 'A';
-                    shelly_print_line("disk: current drive = A", color, &row);
+                    if (vfs_disk_connected())
+                    {
+                        current_disk = 'A';
+                        shelly_print_line("disk: current drive = A", color, &row);
+                    }
+                    else
+                    {
+                        shelly_print_line("disk A: не подключён", color, &row);
+                    }
                 }
                 else
                 {

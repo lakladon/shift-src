@@ -15,9 +15,10 @@ typedef struct
 static VfsFile failiki[8];
 static int skolko_failov = 0;
 static unsigned char sklad[4096];
+static int disk_connected = 0;
 
 #define ATAIOBASE 0x1F0
-#define VFSDISKLBA 0
+#define VFSDISKLBA 128
 #define VFSDISKSECTORS 8
 
 static int strlen127(const char* s)
@@ -253,8 +254,8 @@ static void vfssetdefaults()
     int i = 0;
     while (i < 8)
     {
-        failiki[i].created = 0;
-        failiki[i].modified = 0;
+        failiki[i].sozdan = 0;
+        failiki[i].izmenen = 0;
         i = i + 1;
     }
 }
@@ -317,6 +318,11 @@ static void vfssavetodisk()
     int i = 0;
     int pos = 5;
 
+    if (!disk_connected)
+    {
+        return;
+    }
+
     memzero(sklad, 4096);
     sklad[0] = 'S';
     sklad[1] = 'V';
@@ -368,6 +374,15 @@ static unsigned int vfspoxixtime()
 
 void vfs_init()
 {
+    if (!atareadsectors(VFSDISKLBA, 1, sklad))
+    {
+        disk_connected = 0;
+        vfssetdefaults();
+        return;
+    }
+
+    disk_connected = 1;
+
     if (!vfsloadfromdisk())
     {
         vfssetdefaults();
@@ -412,6 +427,11 @@ int vfs_write(const char* path, const char* text)
 {
     int idx = findindex(path);
     unsigned int now;
+
+    if (!disk_connected)
+    {
+        return 0;
+    }
 
     if (!strfits31(path) || !strfits127(text) || strlen31(path) == 0)
     {
@@ -463,4 +483,9 @@ int vfs_meta(const char* path, unsigned int* razmer, unsigned int* sozdan, unsig
     }
 
     return 1;
+}
+
+int vfs_disk_connected()
+{
+    return disk_connected;
 }
