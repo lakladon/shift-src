@@ -327,6 +327,116 @@ static void str_copy64(char* dst, const char* src)
     dst[i] = 0;
 }
 
+static int str_len127(const char* s)
+{
+    int i = 0;
+    while (i < 127 && s[i])
+    {
+        i = i + 1;
+    }
+    return i;
+}
+
+static void redraw_editor_line(unsigned char color, int row, const char* text, int len)
+{
+    int i = 0;
+
+    while (i < 80)
+    {
+        pishi_bukvu(' ', color, row, i);
+        i = i + 1;
+    }
+
+    i = 0;
+    while (i < len && i < 80)
+    {
+        pishi_bukvu(text[i], color, row, i);
+        i = i + 1;
+    }
+}
+
+static int run_line_editor(unsigned char color, const char* path)
+{
+    char text[128];
+    int len = 0;
+
+    if (vfs_is_dir(path))
+    {
+        return -1;
+    }
+
+    if (!vfs_read(path, text, 128))
+    {
+        text[0] = 0;
+    }
+
+    len = str_len127(text);
+
+    ochisti_ekranchik(color);
+    pishi_na_ekran("Shift OS editor", color, 0, 0);
+    pishi_na_ekran("Enter=save+exit, Esc=cancel, Backspace=delete", color, 1, 0);
+    pishi_na_ekran(path, color, 2, 0);
+    redraw_editor_line(color, 4, text, len);
+
+    while (1)
+    {
+        unsigned char sc;
+        char c;
+
+        if (!klava_est())
+        {
+            continue;
+        }
+
+        sc = klava_chitai();
+
+        if (sc == 0x01)
+        {
+            return 0;
+        }
+
+        if (sc == 0x0E)
+        {
+            if (len > 0)
+            {
+                len = len - 1;
+                text[len] = 0;
+                redraw_editor_line(color, 4, text, len);
+            }
+            continue;
+        }
+
+        if (sc == 0x1C)
+        {
+            text[len] = 0;
+            if (vfs_write(path, text))
+            {
+                return 1;
+            }
+            return -1;
+        }
+
+        if (sc & 0x80)
+        {
+            continue;
+        }
+
+        c = skan_v_bukvu(sc);
+        if (!c || c == '\n' || c == '\t' || c == '\b')
+        {
+            continue;
+        }
+
+        if (len < 127)
+        {
+            text[len] = c;
+            len = len + 1;
+            text[len] = 0;
+            redraw_editor_line(color, 4, text, len);
+        }
+    }
+}
+
 static void redraw_input_line(unsigned char color, int row, char* word, int* len, int* col)
 {
     int i = 2;
@@ -364,7 +474,7 @@ void mega_tusa(void)
     ubi_mig_stroku();
     ochisti_ekranchik(color);
     pishi_na_ekran("Shift OS (VGA)", color, 0, 0);
-    pishi_na_ekran("Mini shell: help, drives, disk A|B, pwd/cd/ls/cat/write/mkdir", color, 1, 0);
+    pishi_na_ekran("Mini shell: help, pwd/cd/ls/cat/write/mkdir/edit", color, 1, 0);
     pishi_na_ekran("> ", color, row, col);
     col = 2;
 
@@ -390,7 +500,7 @@ void mega_tusa(void)
     }
 
     say_to_serialka("Shift OS\r\n");
-    say_to_serialka("Mini shell: help, clear, about, echo, sayser, time, uptime, drives, disk <A|B>, pwd, cd, ls, cat, write, mkdir, stat\r\n> ");
+    say_to_serialka("Mini shell: help, clear, about, echo, sayser, time, uptime, drives, disk <A|B>, pwd, cd, ls, cat, write, mkdir, edit, stat\r\n> ");
 
     while (1)
     {
@@ -521,6 +631,7 @@ void mega_tusa(void)
                 shelly_print_line("  cat <path>", color, &row);
                 shelly_print_line("  write <path> <text>", color, &row);
                 shelly_print_line("  mkdir <path>", color, &row);
+                shelly_print_line("  edit <path>", color, &row);
                 shelly_print_line("  stat <path>", color, &row);
             }
             else if (stroki_odinakovie(word, "clear"))
@@ -790,6 +901,28 @@ void mega_tusa(void)
                 else
                 {
                     shelly_print_line("mkdir: ok", color, &row);
+                }
+            }
+            else if (nachinaetsya_s(word, "edit "))
+            {
+                char path[32];
+                int rc;
+
+                resolve_path(path, word + 5, current_disk, cwd);
+                rc = run_line_editor(color, path);
+
+                shelly_reset_screen(color, &row);
+                if (rc > 0)
+                {
+                    shelly_print_line("edit: saved", color, &row);
+                }
+                else if (rc == 0)
+                {
+                    shelly_print_line("edit: canceled", color, &row);
+                }
+                else
+                {
+                    shelly_print_line("edit: failed", color, &row);
                 }
             }
             else if (nachinaetsya_s(word, "stat "))
