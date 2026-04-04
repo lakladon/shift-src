@@ -56,15 +56,18 @@ static void pic_remap_and_mask(void)
 void irq0_c_handler(void)
 {
     timerka_tick_irq0();
-    zhmyak_out(0x20, 0x20);
 }
 
 __attribute__((naked)) void irq0_stub(void)
 {
     __asm__ volatile (
+        "cli\n"
         "pusha\n"
         "call irq0_c_handler\n"
+        "movb $0x20, %al\n"
+        "outb %al, $0x20\n"
         "popa\n"
+        "sti\n"
         "iret\n"
     );
 }

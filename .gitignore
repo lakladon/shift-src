@@ -6,3 +6,4 @@ kernel.bin
 boot.bin
 vfs.img
 *.o
+shift-os.iso

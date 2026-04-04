@@ -6,7 +6,8 @@ vfs.img:
 boot.bin: boot.asm
 	nasm -f bin boot.asm -o boot.bin
 
-kernel.bin: kernel.c iozh.c serialka.c ekran.c klava.c stroki.c timerka.c irqka.c vfs.c
+kernel.elf: kernel.c iozh.c serialka.c ekran.c klava.c stroki.c timerka.c irqka.c vfs.c multiboot.asm
+	nasm -f elf32 multiboot.asm -o multiboot.o
 	gcc -m32 -ffreestanding -fno-pie -fno-stack-protector -nostdlib -nostartfiles -nodefaultlibs -c kernel.c -o kernel.o
 	gcc -m32 -ffreestanding -fno-pie -fno-stack-protector -nostdlib -nostartfiles -nodefaultlibs -c iozh.c -o iozh.o
 	gcc -m32 -ffreestanding -fno-pie -fno-stack-protector -nostdlib -nostartfiles -nodefaultlibs -c serialka.c -o serialka.o
@@ -16,8 +17,11 @@ kernel.bin: kernel.c iozh.c serialka.c ekran.c klava.c stroki.c timerka.c irqka.
 	gcc -m32 -ffreestanding -fno-pie -fno-stack-protector -nostdlib -nostartfiles -nodefaultlibs -c timerka.c -o timerka.o
 	gcc -m32 -ffreestanding -fno-pie -fno-stack-protector -nostdlib -nostartfiles -nodefaultlibs -c irqka.c -o irqka.o
 	gcc -m32 -ffreestanding -fno-pie -fno-stack-protector -nostdlib -nostartfiles -nodefaultlibs -c vfs.c -o vfs.o
-	ld -m elf_i386 -Ttext 0x1000 --oformat binary kernel.o iozh.o serialka.o ekran.o klava.o stroki.o timerka.o irqka.o vfs.o -o kernel.bin
-	rm -f kernel.o iozh.o serialka.o ekran.o klava.o stroki.o timerka.o irqka.o vfs.o
+	ld -m elf_i386 -T linker.ld multiboot.o kernel.o iozh.o serialka.o ekran.o klava.o stroki.o timerka.o irqka.o vfs.o -o kernel.elf
+	rm -f multiboot.o kernel.o iozh.o serialka.o ekran.o klava.o stroki.o timerka.o irqka.o vfs.o
+
+kernel.bin: kernel.elf
+	objcopy -O binary kernel.elf kernel.bin
 
 os.bin: boot.bin kernel.bin
 	cat boot.bin kernel.bin > os.bin
@@ -26,7 +30,13 @@ os.bin: boot.bin kernel.bin
 run: os.bin vfs.img
 	qemu-system-i386 -serial stdio -monitor none -no-reboot -no-shutdown -drive file=os.bin,if=floppy,format=raw -boot a -drive file=vfs.img,if=ide,format=raw
 
-run-gui: os.bin vfs.img
-	qemu-system-i386 -drive file=os.bin,if=floppy,format=raw -boot a -drive file=vfs.img,if=ide,format=raw
+iso-grub: kernel.elf
+	mkdir -p iso-grub/boot/grub
+	cp kernel.elf iso-grub/boot/kernel.elf
+	printf 'set timeout=0\nset default=0\n\nmenuentry "SHIFT OS" {\n    multiboot /boot/kernel.elf\n    boot\n}\n' > iso-grub/boot/grub/grub.cfg
+	grub-mkrescue -o shift-os.iso iso-grub/
+	rm -rf iso-grub/
+
 clean:
-	rm -f boot.bin kernel.bin os.bin k.o kernel.o iozh.o serialka.o ekran.o klava.o stroki.o timerka.o irqka.o vfs.o
+	rm -f boot.bin kernel.bin os.bin kernel.elf k.o kernel.o iozh.o serialka.o ekran.o klava.o stroki.o timerka.o irqka.o vfs.o
+	rm -rf iso/ iso-grub/
